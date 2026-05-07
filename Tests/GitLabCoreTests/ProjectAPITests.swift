@@ -24,7 +24,7 @@ final class ProjectAPITests: XCTestCase {
         }
         let client = makeTestClient()
         _ = try await client.getProject(path: "group/sub/project")
-        XCTAssertTrue(capturedURL?.path.contains("group%2Fsub%2Fproject") == true)
+        XCTAssertTrue(capturedURL?.absoluteString.contains("group%2Fsub%2Fproject") == true)
     }
 
     func testListProjects() async throws {

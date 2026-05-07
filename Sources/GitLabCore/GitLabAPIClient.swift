@@ -64,10 +64,13 @@ public struct GitLabAPIClient: Sendable {
         body: Data? = nil
     ) async throws -> (Data, HTTPURLResponse) {
         let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        var components = URLComponents(
-            url: baseURL.appending(path: "/api/v4/\(trimmed)"),
-            resolvingAgainstBaseURL: false
-        )!
+        // Use percentEncodedPath so encodePath's %2F isn't double-encoded by appending(path:)
+        var components = URLComponents()
+        components.scheme = baseURL.scheme
+        components.host = baseURL.host
+        components.port = baseURL.port
+        let basePath = baseURL.path.hasSuffix("/") ? String(baseURL.path.dropLast()) : baseURL.path
+        components.percentEncodedPath = "\(basePath)/api/v4/\(trimmed)"
         if !queryItems.isEmpty {
             components.queryItems = queryItems
         }
