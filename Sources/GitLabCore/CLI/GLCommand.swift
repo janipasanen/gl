@@ -76,6 +76,10 @@ public struct GLCommand: Sendable {
         case "workitems", "work-items":
             return try parseWorkItems(args: args, json: json)
 
+        // ------------------------------------------------------------------ tags
+        case "tags":
+            return try parseTags(args: args, json: json)
+
         default:
             throw CommandError.unknownCommand(resource)
         }
@@ -670,6 +674,19 @@ public struct GLCommand: Sendable {
                 let params = AddMemberParams(userId: userId, accessLevel: accessLevel, expiresAt: expiresAt)
                 return try await Formatter.formatMember(client.addProjectMember(project: project, params: params), json: json)
             }
+        case "get":
+            let project = try require(args.positional(2), usage: "members get <project> <user-id>")
+            let userId = try requireInt(args.positional(3), name: "user-id")
+            return GLCommand { client in
+                try await Formatter.formatMember(client.getProjectMember(project: project, userId: userId), json: json)
+            }
+        case "update":
+            let project = try require(args.positional(2), usage: "members update <project> <user-id> --access-level <n>")
+            let userId = try requireInt(args.positional(3), name: "user-id")
+            let accessLevel = try requireInt(args.option("access-level"), name: "--access-level")
+            return GLCommand { client in
+                try await Formatter.formatMember(client.updateProjectMember(project: project, userId: userId, accessLevel: accessLevel), json: json)
+            }
         case "remove":
             let project = try require(args.positional(2), usage: "members remove <project> --user <id>")
             let userId = try requireInt(args.option("user"), name: "--user")
@@ -748,6 +765,12 @@ public struct GLCommand: Sendable {
             return GLCommand { client in
                 try await Formatter.formatPipeline(client.retryPipeline(project: project, pipelineId: id), json: json)
             }
+        case "create":
+            let project = try require(args.positional(2), usage: "pipelines create <project> --ref <branch>")
+            let ref = try require(args.option("ref"), usage: "pipelines create ... --ref <branch>")
+            return GLCommand { client in
+                try await Formatter.formatPipeline(client.createPipeline(project: project, ref: ref), json: json)
+            }
         case "delete":
             let project = try require(args.positional(2), usage: "pipelines delete <project> <id>")
             let id = try requireInt(args.positional(3), name: "pipeline-id")
@@ -786,6 +809,14 @@ public struct GLCommand: Sendable {
                 let params = CreateReleaseParams(tagName: tag, name: name, description: description, ref: ref)
                 return try await Formatter.formatRelease(client.createRelease(project: project, params: params), json: json)
             }
+        case "update":
+            let project = try require(args.positional(2), usage: "releases update <project> <tag> --name <name>")
+            let tag = try require(args.positional(3), usage: "releases update <project> <tag> --name <name>")
+            let name = try require(args.option("name"), usage: "releases update ... --name <name>")
+            let description = args.option("description") ?? args.option("desc")
+            return GLCommand { client in
+                try await Formatter.formatRelease(client.updateRelease(project: project, tagName: tag, name: name, description: description), json: json)
+            }
         case "delete":
             let project = try require(args.positional(2), usage: "releases delete <project> <tag>")
             let tag = try require(args.positional(3), usage: "releases delete <project> <tag>")
@@ -823,8 +854,75 @@ public struct GLCommand: Sendable {
                 let params = CreateWorkItemParams(title: title, workItemTypeId: typeId, description: description)
                 return try await Formatter.formatWorkItem(client.createWorkItem(project: project, params: params), json: json)
             }
+        case "update":
+            let project = try require(args.positional(2), usage: "workitems update <project> <iid>")
+            let iid = try requireInt(args.positional(3), name: "iid")
+            let title = args.option("title")
+            let description = args.option("description") ?? args.option("desc")
+            let stateEvent = args.option("state-event")
+            return GLCommand { client in
+                let params = UpdateWorkItemParams(title: title, description: description, stateEvent: stateEvent)
+                return try await Formatter.formatWorkItem(client.updateWorkItem(project: project, iid: iid, params: params), json: json)
+            }
+        case "close":
+            let project = try require(args.positional(2), usage: "workitems close <project> <iid>")
+            let iid = try requireInt(args.positional(3), name: "iid")
+            return GLCommand { client in
+                try await Formatter.formatWorkItem(client.closeWorkItem(project: project, iid: iid), json: json)
+            }
+        case "reopen":
+            let project = try require(args.positional(2), usage: "workitems reopen <project> <iid>")
+            let iid = try requireInt(args.positional(3), name: "iid")
+            return GLCommand { client in
+                try await Formatter.formatWorkItem(client.reopenWorkItem(project: project, iid: iid), json: json)
+            }
+        case "delete":
+            let project = try require(args.positional(2), usage: "workitems delete <project> <iid>")
+            let iid = try requireInt(args.positional(3), name: "iid")
+            return GLCommand { client in
+                try await client.deleteWorkItem(project: project, iid: iid)
+                return "Work item \(iid) deleted."
+            }
         default:
             throw CommandError.unknownCommand("workitems \(sub)")
+        }
+    }
+
+    private static func parseTags(args: ParsedArgs, json: Bool) throws -> GLCommand {
+        let sub = args.positional(1) ?? "list"
+        switch sub {
+        case "list":
+            let project = try require(args.positional(2), usage: "tags list <project>")
+            let search = args.option("search")
+            let page = args.option("page").flatMap(Int.init) ?? 1
+            let perPage = args.option("per-page").flatMap(Int.init) ?? 20
+            return GLCommand { client in
+                try await Formatter.formatTags(client.listTags(project: project, search: search, page: page, perPage: perPage), json: json)
+            }
+        case "get":
+            let project = try require(args.positional(2), usage: "tags get <project> <tag>")
+            let tag = try require(args.positional(3), usage: "tags get <project> <tag>")
+            return GLCommand { client in
+                try await Formatter.formatTag(client.getTag(project: project, tagName: tag), json: json)
+            }
+        case "create":
+            let project = try require(args.positional(2), usage: "tags create <project> --name <tag> --ref <ref>")
+            let name = try require(args.option("name"), usage: "tags create ... --name <tag>")
+            let ref = try require(args.option("ref"), usage: "tags create ... --ref <ref>")
+            let message = args.option("message")
+            return GLCommand { client in
+                let params = CreateTagParams(tagName: name, ref: ref, message: message)
+                return try await Formatter.formatTag(client.createTag(project: project, params: params), json: json)
+            }
+        case "delete":
+            let project = try require(args.positional(2), usage: "tags delete <project> <tag>")
+            let tag = try require(args.positional(3), usage: "tags delete <project> <tag>")
+            return GLCommand { client in
+                try await client.deleteTag(project: project, tagName: tag)
+                return "Tag '\(tag)' deleted."
+            }
+        default:
+            throw CommandError.unknownCommand("tags \(sub)")
         }
     }
 
@@ -940,7 +1038,9 @@ public struct GLCommand: Sendable {
       groups milestones delete <group> <id>
 
       members list   <project> [--search <q>]
+      members get    <project> <user-id>
       members add    <project> --user <id> --access-level <10|20|30|40|50>
+      members update <project> <user-id> --access-level <10|20|30|40|50>
       members remove <project> --user <id>
 
       branches list   <project> [--search <q>]
@@ -950,6 +1050,7 @@ public struct GLCommand: Sendable {
 
       pipelines list   <project> [--ref <branch>] [--status running|success|failed|...]
       pipelines get    <project> <id>
+      pipelines create <project> --ref <branch>
       pipelines cancel <project> <id>
       pipelines retry  <project> <id>
       pipelines delete <project> <id>
@@ -957,11 +1058,21 @@ public struct GLCommand: Sendable {
       releases list   <project>
       releases get    <project> <tag>
       releases create <project> --tag <tag> --name <name> [--description <d>] [--ref <ref>]
+      releases update <project> <tag> --name <name> [--description <d>]
       releases delete <project> <tag>
 
       workitems list   <project>
       workitems get    <project> <iid>
       workitems create <project> --title <t> [--type-id <id>] [--description <d>]
+      workitems update <project> <iid> [--title <t>] [--description <d>] [--state-event close|reopen]
+      workitems close  <project> <iid>
+      workitems reopen <project> <iid>
+      workitems delete <project> <iid>
+
+      tags list   <project> [--search <q>]
+      tags get    <project> <tag>
+      tags create <project> --name <tag> --ref <ref> [--message <msg>]
+      tags delete <project> <tag>
 
     ENVIRONMENT
       GITLAB_API_URL   GitLab host, e.g. https://gitlab.com
