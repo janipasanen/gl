@@ -1293,8 +1293,11 @@ public struct GLCommand: Sendable {
       snippets delete <project> <id>
 
     ENVIRONMENT
-      GITLAB_API_URL   GitLab host, e.g. https://gitlab.com
-      GITLAB_TOKEN     Personal access token (scope: api)
+      GITLAB_API_URL        GitLab host, e.g. https://gitlab.com
+      GITLAB_TOKEN          Personal access token (scope: api)
+      GITLAB_TOKEN_COMMAND  Command whose stdout is the token, used when GITLAB_TOKEN
+                            is unset — keeps the token out of env vars and files,
+                            e.g. security find-generic-password -s gitlab-gl-token -w
 
     ACCESS LEVELS
       0 No access  5 Minimal  10 Guest  20 Reporter  30 Developer  40 Maintainer  50 Owner

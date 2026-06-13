@@ -152,4 +152,59 @@ final class APIClientTests: XCTestCase {
             XCTAssertTrue(error.localizedDescription.contains("Invalid GitLab API URL"))
         }
     }
+
+    // MARK: - GITLAB_TOKEN_COMMAND (regression for #8)
+
+    func testTokenFromCommand() throws {
+        let client = try GitLabAPIClient(environment: [
+            "GITLAB_API_URL": "https://gitlab.example.com",
+            "GITLAB_TOKEN_COMMAND": "echo glpat-from-command",
+        ])
+        // trailing newline from echo must be trimmed
+        XCTAssertEqual(client.token, "glpat-from-command")
+    }
+
+    func testTokenEnvWinsOverCommand() throws {
+        let client = try GitLabAPIClient(environment: [
+            "GITLAB_API_URL": "https://gitlab.example.com",
+            "GITLAB_TOKEN": "explicit-token",
+            "GITLAB_TOKEN_COMMAND": "echo should-not-be-used",
+        ])
+        XCTAssertEqual(client.token, "explicit-token")
+    }
+
+    func testTokenCommandSupportsShellSyntax() throws {
+        let client = try GitLabAPIClient(environment: [
+            "GITLAB_API_URL": "https://gitlab.example.com",
+            "GITLAB_TOKEN_COMMAND": "printf '%s' \"pre-$((1+1))-post\"",
+        ])
+        XCTAssertEqual(client.token, "pre-2-post")
+    }
+
+    func testTokenCommandNonZeroExitThrows() {
+        XCTAssertThrowsError(try GitLabAPIClient(environment: [
+            "GITLAB_API_URL": "https://gitlab.example.com",
+            "GITLAB_TOKEN_COMMAND": "echo nope >&2; exit 7",
+        ])) { error in
+            XCTAssertTrue(error.localizedDescription.contains("status 7"))
+        }
+    }
+
+    func testTokenCommandEmptyOutputThrows() {
+        XCTAssertThrowsError(try GitLabAPIClient(environment: [
+            "GITLAB_API_URL": "https://gitlab.example.com",
+            "GITLAB_TOKEN_COMMAND": "true",
+        ])) { error in
+            XCTAssertTrue(error.localizedDescription.contains("no output"))
+        }
+    }
+
+    func testInitMissingTokenAndCommandMentionsBoth() {
+        XCTAssertThrowsError(try GitLabAPIClient(environment: [
+            "GITLAB_API_URL": "https://gitlab.example.com",
+        ])) { error in
+            XCTAssertTrue(error.localizedDescription.contains("GITLAB_TOKEN"))
+            XCTAssertTrue(error.localizedDescription.contains("GITLAB_TOKEN_COMMAND"))
+        }
+    }
 }

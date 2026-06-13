@@ -11,6 +11,7 @@ public struct GitLabAPIClient: Sendable {
         case invalidURL(String)
         case invalidResponse
         case apiError(Int, String)
+        case tokenCommandFailed(String)
 
         public var errorDescription: String? {
             switch self {
@@ -22,6 +23,8 @@ public struct GitLabAPIClient: Sendable {
                 return "GitLab API returned an invalid response"
             case .apiError(let code, let message):
                 return "GitLab API error \(code): \(message)"
+            case .tokenCommandFailed(let message):
+                return message
             }
         }
     }
@@ -44,9 +47,7 @@ public struct GitLabAPIClient: Sendable {
         guard let rawURL = environment["GITLAB_API_URL"], !rawURL.isEmpty else {
             throw ClientError.missingEnvironment("GITLAB_API_URL")
         }
-        guard let tok = environment["GITLAB_TOKEN"], !tok.isEmpty else {
-            throw ClientError.missingEnvironment("GITLAB_TOKEN")
-        }
+        let tok = try Self.resolveToken(environment: environment)
         let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed),
               url.scheme == "http" || url.scheme == "https",
@@ -54,6 +55,59 @@ public struct GitLabAPIClient: Sendable {
             throw ClientError.invalidURL(rawURL)
         }
         self.init(baseURL: url, token: tok)
+    }
+
+    // MARK: Token resolution
+
+    /// Resolve the API token. An explicit non-empty `GITLAB_TOKEN` wins;
+    /// otherwise `GITLAB_TOKEN_COMMAND` is executed and its stdout is used
+    /// (so the token need never live in an env var or plaintext file).
+    static func resolveToken(environment: [String: String]) throws -> String {
+        if let tok = environment["GITLAB_TOKEN"], !tok.isEmpty {
+            return tok
+        }
+        if let command = environment["GITLAB_TOKEN_COMMAND"],
+           !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return try runTokenCommand(command)
+        }
+        throw ClientError.missingEnvironment("GITLAB_TOKEN or GITLAB_TOKEN_COMMAND")
+    }
+
+    /// Run `command` via `/bin/sh -c` and return its trimmed stdout as the token.
+    static func runTokenCommand(_ command: String) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", command]
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        do {
+            try process.run()
+        } catch {
+            throw ClientError.tokenCommandFailed(
+                "GITLAB_TOKEN_COMMAND could not be executed: \(error.localizedDescription)")
+        }
+
+        let outData = stdout.fileHandleForReading.readDataToEndOfFile()
+        let errData = stderr.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            let detail = String(data: errData, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let suffix = detail.isEmpty ? "" : ": \(detail)"
+            throw ClientError.tokenCommandFailed(
+                "GITLAB_TOKEN_COMMAND exited with status \(process.terminationStatus)\(suffix)")
+        }
+
+        let token = (String(data: outData, encoding: .utf8) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else {
+            throw ClientError.tokenCommandFailed("GITLAB_TOKEN_COMMAND produced no output")
+        }
+        return token
     }
 
     // MARK: Raw request

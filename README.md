@@ -40,6 +40,7 @@ swift test
 |---|---|
 | `GITLAB_API_URL` | Base URL of your GitLab instance, e.g. `https://gitlab.com` |
 | `GITLAB_TOKEN` | Personal access token with `api` scope |
+| `GITLAB_TOKEN_COMMAND` | Optional. A command whose stdout is used as the token when `GITLAB_TOKEN` is unset — keeps the token out of env vars and plaintext files |
 
 ### Where to find your credentials
 
@@ -60,6 +61,19 @@ Set the variables in your shell profile (`~/.zshrc`, `~/.bashrc`, etc.):
 export GITLAB_API_URL=https://gitlab.com
 export GITLAB_TOKEN=glpat-xxxxxxxxxxxxxxxxxxxx
 ```
+
+#### Keeping the token out of env vars and files
+
+Putting the token in `GITLAB_TOKEN` means it lives in your shell environment and (usually) in a plaintext profile — both readable by anything running as you, including AI agents that dump `env` or read `~/.zshrc`. Instead, set **`GITLAB_TOKEN_COMMAND`**: when `GITLAB_TOKEN` is unset, `gl` runs this command (via `/bin/sh -c`) and uses its trimmed stdout as the token. The token never sits in an env var or a file.
+
+macOS Keychain example — store once, then reference it:
+
+```bash
+security add-generic-password -a "$USER" -s gitlab-gl-token -w   # prompts for the token
+export GITLAB_TOKEN_COMMAND='security find-generic-password -a "$USER" -s gitlab-gl-token -w'
+```
+
+Works with any secret source (`pass`, 1Password CLI, Vault, etc.). If `GITLAB_TOKEN` is also set, it takes precedence. A non-zero exit or empty output is reported as an error.
 
 ---
 

@@ -9,7 +9,7 @@ notes, pipelines, branches, releases, tags, members, and work items.
 
 ## Authentication
 
-The app reads two environment variables:
+The app reads these environment variables:
 
 - `GITLAB_API_URL` — the GitLab base URL. Both `https://gitlab.com` and
   `https://gitlab.com/api/v4` are accepted (a trailing `/api/v4` and trailing
@@ -17,6 +17,10 @@ The app reads two environment variables:
   host, or construction fails with `Invalid GitLab API URL`.
 - `GITLAB_TOKEN` — a personal access token with the `api` scope, sent as the
   `PRIVATE-TOKEN` header on every request.
+- `GITLAB_TOKEN_COMMAND` — optional. When `GITLAB_TOKEN` is unset, this command is
+  run via `/bin/sh -c` and its trimmed stdout is used as the token, so the secret
+  need never live in an env var or plaintext file (e.g. a macOS Keychain lookup).
+  An explicit `GITLAB_TOKEN` takes precedence; a non-zero exit or empty output errors.
 
 ## Package structure
 
