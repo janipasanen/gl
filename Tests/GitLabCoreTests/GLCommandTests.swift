@@ -530,4 +530,62 @@ final class GLCommandTests: XCTestCase {
         let output = try await cmd.run(client: makeTestClient())
         XCTAssertTrue(output.contains("deleted"))
     }
+
+    // MARK: - state flag normalization (regression for #7)
+
+    private func capturedStateParam(forArgs args: [String], body: String) async throws -> String? {
+        var capturedURL: URL?
+        MockURLProtocol.requestHandler = { req in
+            capturedURL = req.url
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, Data(body.utf8))
+        }
+        let cmd = try GLCommand.parse(arguments: args)
+        _ = try await cmd.run(client: makeTestClient())
+        let comps = capturedURL.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
+        return comps?.queryItems?.first(where: { $0.name == "state" })?.value
+    }
+
+    func testIssuesListStateOpenAliasedToOpened() async throws {
+        let state = try await capturedStateParam(
+            forArgs: ["issues", "list", "p", "--state", "open"],
+            body: Fixtures.issuesArrayJSON
+        )
+        XCTAssertEqual(state, "opened")
+    }
+
+    func testIssuesListStateOpenedUnchanged() async throws {
+        let state = try await capturedStateParam(
+            forArgs: ["issues", "list", "p", "--state", "opened"],
+            body: Fixtures.issuesArrayJSON
+        )
+        XCTAssertEqual(state, "opened")
+    }
+
+    func testIssuesListStateClosedUnchanged() async throws {
+        let state = try await capturedStateParam(
+            forArgs: ["issues", "list", "p", "--state", "closed"],
+            body: Fixtures.issuesArrayJSON
+        )
+        XCTAssertEqual(state, "closed")
+    }
+
+    func testMRListStateOpenAliasedToOpened() async throws {
+        let state = try await capturedStateParam(
+            forArgs: ["mr", "list", "p", "--state", "open"],
+            body: Fixtures.mrsArrayJSON
+        )
+        XCTAssertEqual(state, "opened")
+    }
+
+    // MARK: - help text documents audit fixes (#7)
+
+    func testHelpDocumentsStateAndAccessLevelFixes() async throws {
+        let cmd = try GLCommand.parse(arguments: ["--help"])
+        let out = try await cmd.run(client: makeTestClient())
+        XCTAssertTrue(out.contains("--state opened|closed|all"))
+        XCTAssertTrue(out.contains("0 No access"))
+        XCTAssertTrue(out.contains("5 Minimal"))
+        XCTAssertTrue(out.contains("groups milestones update <group> <id> [--title] [--state-event activate|close]"))
+    }
 }

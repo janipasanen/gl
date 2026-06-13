@@ -147,7 +147,7 @@ public struct GLCommand: Sendable {
         switch sub {
         case "list":
             let project = try require(args.positional(2), usage: "issues list <project>")
-            let state = args.option("state")
+            let state = normalizeOpenState(args.option("state"))
             let milestone = args.option("milestone")
             let labels = args.option("labels")
             let assigneeId = args.option("assignee-id").flatMap(Int.init)
@@ -413,7 +413,7 @@ public struct GLCommand: Sendable {
         switch sub {
         case "list":
             let project = try require(args.positional(2), usage: "mr list <project>")
-            let state = args.option("state")
+            let state = normalizeOpenState(args.option("state"))
             let sourceBranch = args.option("source-branch")
             let targetBranch = args.option("target-branch")
             let milestone = args.option("milestone")
@@ -1062,6 +1062,14 @@ public struct GLCommand: Sendable {
 
     // MARK: - Helpers
 
+    /// Map the colloquial `open` to GitLab's canonical `opened` for issue and
+    /// merge-request state filters. GitLab's API rejects `open` with a 400, so
+    /// this lets the documented/intuitive value work while leaving every other
+    /// value (`opened`, `closed`, `merged`, `all`, …) untouched.
+    private static func normalizeOpenState(_ value: String?) -> String? {
+        value == "open" ? "opened" : value
+    }
+
     /// Read the contents of a local file for use as a snippet body.
     private static func readFileContent(_ path: String) throws -> String {
         do {
@@ -1156,7 +1164,7 @@ public struct GLCommand: Sendable {
       projects get    <path>
       projects search <query>
 
-      issues list     <project> [--state open|closed|all] [--milestone <title>]
+      issues list     <project> [--state opened|closed|all] [--milestone <title>]
                                 [--labels <l1,l2>] [--assignee <username>] [--assignee-id <id>]
                                 [--search <q>]
                                 [--page <n>] [--per-page <n>]
@@ -1229,13 +1237,13 @@ public struct GLCommand: Sendable {
                               [--iids <id1,id2>] [--updated-before <iso>] [--updated-after <iso>]
       groups milestones get    <group> <id>
       groups milestones create <group> --title <t>
-      groups milestones update <group> <id> [--title] [--state-event]
+      groups milestones update <group> <id> [--title] [--state-event activate|close]
       groups milestones delete <group> <id>
 
       members list   <project> [--search <q>]
       members get    <project> <user-id>
-      members add    <project> --user <id> --access-level <10|20|30|40|50>
-      members update <project> <user-id> --access-level <10|20|30|40|50>
+      members add    <project> --user <id> --access-level <0|5|10|20|30|40|50>
+      members update <project> <user-id> --access-level <0|5|10|20|30|40|50>
       members remove <project> --user <id>
 
       branches list   <project> [--search <q>]
@@ -1289,6 +1297,6 @@ public struct GLCommand: Sendable {
       GITLAB_TOKEN     Personal access token (scope: api)
 
     ACCESS LEVELS
-      10 Guest  20 Reporter  30 Developer  40 Maintainer  50 Owner
+      0 No access  5 Minimal  10 Guest  20 Reporter  30 Developer  40 Maintainer  50 Owner
     """
 }

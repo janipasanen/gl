@@ -108,7 +108,7 @@ gl projects search <query>
 
 ```bash
 gl issues list <project>
-gl issues list <project> --state open
+gl issues list <project> --state opened   # 'open' is accepted as an alias
 gl issues list <project> --state closed
 gl issues list <project> --labels "bug,high"
 gl issues list <project> --milestone "v1.0"
@@ -236,7 +236,7 @@ gl members add    <project> --user <user-id> --access-level 30
 gl members remove <project> --user <user-id>
 ```
 
-**Access levels:** `10` Guest · `20` Reporter · `30` Developer · `40` Maintainer · `50` Owner
+**Access levels:** `0` No access · `5` Minimal · `10` Guest · `20` Reporter · `30` Developer · `40` Maintainer · `50` Owner
 
 ---
 
@@ -391,7 +391,7 @@ export GITLAB_TOKEN=glpat-xxxx
 gl whoami
 
 # List open issues in my project (JSON)
-gl issues list mygroup/myproject --state open --json
+gl issues list mygroup/myproject --state opened --json
 
 # Create a bug issue
 gl issues create mygroup/myproject \
