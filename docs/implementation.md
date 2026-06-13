@@ -2,67 +2,64 @@
 
 ## Goal
 
-Create a terminal application named `gl` that talks to GitLab through the REST API using environment-based authentication.
-
-The tool should be simple enough to use from a shell, but structured enough to grow into a real operator tool for projects, milestones, issues, notes, and work-item workflows.
+`gl` is a terminal application that talks to GitLab through the REST API v4 using
+environment-based authentication. It is simple to use from a shell but structured
+to act as a real operator tool for projects, issues, merge requests, milestones,
+notes, pipelines, branches, releases, tags, members, and work items.
 
 ## Authentication
 
-The app reads:
+The app reads two environment variables:
 
-- `GITLAB_API_URL`
-- `GITLAB_TOKEN`
-
-`GITLAB_API_URL` defines the GitLab host, and `GITLAB_TOKEN` is sent as `PRIVATE-TOKEN` on each request.
+- `GITLAB_API_URL` — the GitLab base URL. Both `https://gitlab.com` and
+  `https://gitlab.com/api/v4` are accepted (a trailing `/api/v4` and trailing
+  slashes are normalised away). The URL must have an `http`/`https` scheme and a
+  host, or construction fails with `Invalid GitLab API URL`.
+- `GITLAB_TOKEN` — a personal access token with the `api` scope, sent as the
+  `PRIVATE-TOKEN` header on every request.
 
 ## Package structure
 
-The package is a Swift executable package:
+Swift executable package (`swift-tools-version: 6.0`, macOS 14+):
 
-- `Package.swift` defines the `gl` executable target.
-- `Sources/gl/main.swift` is the entry point.
-- `Sources/gl/GitLabAPIClient.swift` owns base URL and auth.
-- `Sources/gl/GitLabAPIClient+Commands.swift` holds common GitLab API command helpers.
-- `Sources/gl/GLCommand.swift` parses CLI arguments and dispatches behavior.
+- `Package.swift` — defines the `gl` executable and the `GitLabCore` library.
+- `Sources/gl/main.swift` — entry point: reads env, parses args, runs the command.
+- `Sources/GitLabCore/GitLabAPIClient.swift` — base URL, auth, request/encode/decode
+  helpers. Builds request URLs with `URLComponents.percentEncodedPath` so the
+  `%2F`-encoded `namespace/project` paths are not double-encoded.
+- `Sources/GitLabCore/Models.swift` — all `Codable` models and parameter structs.
+- `Sources/GitLabCore/API/*.swift` — one file per resource (Issues, MergeRequests,
+  Milestones, Labels, Groups, Members, Branches, Pipelines, Releases, Tags,
+  WorkItems, …), each an extension on `GitLabAPIClient`.
+- `Sources/GitLabCore/CLI/ArgumentParser.swift` — `ParsedArgs` (positionals,
+  options, flags).
+- `Sources/GitLabCore/CLI/Formatter.swift` — table / detail / JSON output.
+- `Sources/GitLabCore/CLI/GLCommand.swift` — command routing and dispatch, plus the
+  `gl help` text.
 
-## Current commands
+## Argument parsing
 
-The first version exposes:
+`ParsedArgs.parse` classifies each token:
 
-- `gl` - defaults to `whoami`
-- `gl whoami`
-- `gl project <path>`
-- `gl issues <project>`
-- `gl milestones <project>`
+- **Positional** — anything not starting with `--`.
+- **Option** — `--key value` or `--key=value`.
+- **Flag** — a boolean switch listed in `ParsedArgs.booleanFlags`
+  (`json`, `membership`, `owned`, `squash`, `remove-source-branch`, `help`).
 
-## Client design
+Boolean flags are recognised **by name**, not by guessing from the next token, so
+`--json` (and the other switches) can appear anywhere on the line without
+swallowing the following positional. When adding a new boolean flag, add it to
+`booleanFlags` so it is not parsed as a value option.
 
-The GitLab client is intentionally lightweight:
+## Output
 
-- builds request URLs from `GITLAB_API_URL`
-- attaches `PRIVATE-TOKEN`
-- uses `URLSession`
-- prints raw API errors when GitLab returns a non-2xx response
+Every command takes a global `--json` flag. In text mode commands print tables or
+detail blocks; in JSON mode they print pretty-printed JSON. Read and
+create/update/close/reopen commands emit the affected object; delete/remove
+commands emit a status object (`{"status":"ok","action":"deleted",…}`).
 
-This keeps the implementation easy to debug and easy to extend.
+## Testing
 
-## Extension points
-
-Good next additions:
-
-- create / update / close issues
-- add notes to issues
-- list and update milestones
-- resolve project IDs from `group/project` paths
-- support JSON output and human-readable tables
-- add a `--project` flag so commands can infer context
-
-## Unknowns to resolve later
-
-- whether the CLI should support GitLab work items beyond issue endpoints
-- whether the app should use direct REST calls only or also optional GraphQL
-- whether output should be JSON-first or text-first
-
-## Delivery note
-
-This initial scaffold is enough to compile into a terminal tool and provides a clean place to keep expanding the GitLab API surface.
+`swift test` runs the suite under `Tests/GitLabCoreTests/`, which uses a
+`MockURLProtocol` URL-session double to assert on request URLs, bodies, query
+items, decoding, argument parsing, command routing, and formatting.

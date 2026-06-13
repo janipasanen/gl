@@ -27,6 +27,29 @@ final class MilestoneAPITests: XCTestCase {
         XCTAssertTrue(capturedQuery?.contains("state=closed") == true)
     }
 
+    func testListMilestonesExtraFilters() async throws {
+        var capturedQuery: String?
+        MockURLProtocol.requestHandler = { req in
+            capturedQuery = req.url?.query
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, Data(Fixtures.milestonesArrayJSON.utf8))
+        }
+        let client = makeTestClient()
+        _ = try await client.listMilestones(
+            project: "p",
+            title: "v1.0",
+            search: "release",
+            iids: [1, 2],
+            updatedBefore: "2024-01-01T00:00:00Z",
+            updatedAfter: "2023-01-01T00:00:00Z"
+        )
+        XCTAssertTrue(capturedQuery?.contains("title=v1.0") == true)
+        XCTAssertTrue(capturedQuery?.contains("search=release") == true)
+        XCTAssertTrue(capturedQuery?.contains("iids%5B%5D=1") == true || capturedQuery?.contains("iids[]=1") == true)
+        XCTAssertTrue(capturedQuery?.contains("updated_before=2024-01-01T00:00:00Z") == true)
+        XCTAssertTrue(capturedQuery?.contains("updated_after=2023-01-01T00:00:00Z") == true)
+    }
+
     func testGetMilestone() async throws {
         stubRaw(json: Fixtures.milestoneJSON)
         let client = makeTestClient()
@@ -100,6 +123,21 @@ final class MilestoneAPITests: XCTestCase {
         let client = makeTestClient()
         let ms = try await client.listGroupMilestones(group: "mygroup")
         XCTAssertEqual(ms.count, 1)
+    }
+
+    func testListGroupMilestonesFilters() async throws {
+        var capturedQuery: String?
+        MockURLProtocol.requestHandler = { req in
+            capturedQuery = req.url?.query
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, Data(Fixtures.milestonesArrayJSON.utf8))
+        }
+        let client = makeTestClient()
+        _ = try await client.listGroupMilestones(group: "mygroup", state: "active", title: "v1.0", search: "release", iids: [1])
+        XCTAssertTrue(capturedQuery?.contains("state=active") == true)
+        XCTAssertTrue(capturedQuery?.contains("title=v1.0") == true)
+        XCTAssertTrue(capturedQuery?.contains("search=release") == true)
+        XCTAssertTrue(capturedQuery?.contains("iids%5B%5D=1") == true || capturedQuery?.contains("iids[]=1") == true)
     }
 
     func testCreateGroupMilestone() async throws {

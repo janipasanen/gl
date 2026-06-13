@@ -65,4 +65,81 @@ final class ArgumentParserTests: XCTestCase {
         let p = ParsedArgs.parse(["--description", "Hello World"])
         XCTAssertEqual(p.option("description"), "Hello World")
     }
+
+    // MARK: - Boolean flags do not consume the next token (regression for #5)
+
+    func testBooleanFlagBeforePositional() {
+        // --json must NOT swallow "issues" as a value
+        let p = ParsedArgs.parse(["--json", "issues", "list", "p"])
+        XCTAssertTrue(p.flag("json"))
+        XCTAssertEqual(p.positionals, ["issues", "list", "p"])
+        XCTAssertNil(p.option("json"))
+    }
+
+    func testBooleanFlagBetweenPositionals() {
+        let p = ParsedArgs.parse(["issues", "list", "--json", "p"])
+        XCTAssertTrue(p.flag("json"))
+        XCTAssertEqual(p.positionals, ["issues", "list", "p"])
+    }
+
+    func testBooleanFlagAndValueOptionMixed() {
+        let p = ParsedArgs.parse(["--json", "issues", "list", "p", "--state", "open"])
+        XCTAssertTrue(p.flag("json"))
+        XCTAssertEqual(p.positionals, ["issues", "list", "p"])
+        XCTAssertEqual(p.option("state"), "open")
+    }
+
+    func testKnownBooleanFlagsNeverTakeValues() {
+        let p = ParsedArgs.parse(["mr", "merge", "p", "1", "--squash", "--remove-source-branch", "--message", "done"])
+        XCTAssertEqual(p.positionals, ["mr", "merge", "p", "1"])
+        XCTAssertTrue(p.flag("squash"))
+        XCTAssertTrue(p.flag("remove-source-branch"))
+        XCTAssertEqual(p.option("message"), "done")
+    }
+
+    // MARK: - --key=value form
+
+    func testKeyEqualsValue() {
+        let p = ParsedArgs.parse(["issues", "list", "p", "--state=open", "--labels=bug,high"])
+        XCTAssertEqual(p.positionals, ["issues", "list", "p"])
+        XCTAssertEqual(p.option("state"), "open")
+        XCTAssertEqual(p.option("labels"), "bug,high")
+    }
+
+    func testKeyEqualsValueWithEqualsInValue() {
+        let p = ParsedArgs.parse(["--description=a=b"])
+        XCTAssertEqual(p.option("description"), "a=b")
+    }
+
+    // MARK: - Dangling value option
+
+    func testDanglingOptionAtEndBecomesFlag() {
+        // --state with no following value should not crash or consume a sibling
+        let p = ParsedArgs.parse(["issues", "list", "p", "--state"])
+        XCTAssertEqual(p.positionals, ["issues", "list", "p"])
+        XCTAssertNil(p.option("state"))
+    }
+
+    // MARK: - Boolean flag written as --flag=value (regression for #5 review)
+
+    func testBooleanFlagEqualsTrue() {
+        // --json=true must set the json flag, not store it as an option
+        let p = ParsedArgs.parse(["--json=true", "whoami"])
+        XCTAssertTrue(p.flag("json"))
+        XCTAssertNil(p.option("json"))
+        XCTAssertEqual(p.positionals, ["whoami"])
+    }
+
+    func testBooleanFlagEqualsOneAndYes() {
+        XCTAssertTrue(ParsedArgs.parse(["--json=1"]).flag("json"))
+        XCTAssertTrue(ParsedArgs.parse(["--json=yes"]).flag("json"))
+        XCTAssertTrue(ParsedArgs.parse(["--json="]).flag("json"))
+    }
+
+    func testBooleanFlagEqualsFalseLeavesUnset() {
+        let p = ParsedArgs.parse(["--json=false", "whoami"])
+        XCTAssertFalse(p.flag("json"))
+        XCTAssertNil(p.option("json"))
+        XCTAssertEqual(p.positionals, ["whoami"])
+    }
 }

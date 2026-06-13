@@ -239,6 +239,23 @@ enum Fixtures {
     }
     """
 
+    static let snippetJSON = """
+    {
+      "id": 17,
+      "title": "Quick fix",
+      "file_name": "fix.swift",
+      "description": "A handy snippet",
+      "visibility": "private",
+      "author": {"id": 2, "username": "asmith", "name": "Alice Smith", "web_url": "https://gitlab.example.com/asmith"},
+      "project_id": 42,
+      "web_url": "https://gitlab.example.com/mygroup/my-project/-/snippets/17",
+      "raw_url": "https://gitlab.example.com/mygroup/my-project/-/snippets/17/raw",
+      "created_at": "2024-05-01T08:00:00.000Z",
+      "updated_at": "2024-05-01T08:00:00.000Z",
+      "files": [{"path": "fix.swift", "raw_url": "https://gitlab.example.com/mygroup/my-project/-/snippets/17/raw/main/fix.swift"}]
+    }
+    """
+
     // Convenience: arrays
 
     static var usersArrayJSON: String { "[\(userJSON)]" }
@@ -254,4 +271,5 @@ enum Fixtures {
     static var pipelinesArrayJSON: String { "[\(pipelineJSON)]" }
     static var releasesArrayJSON: String { "[\(releaseJSON)]" }
     static var workItemsArrayJSON: String { "[\(workItemJSON)]" }
+    static var snippetsArrayJSON: String { "[\(snippetJSON)]" }
 }

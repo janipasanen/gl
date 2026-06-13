@@ -80,6 +80,10 @@ public struct GLCommand: Sendable {
         case "tags":
             return try parseTags(args: args, json: json)
 
+        // ------------------------------------------------------------------ snippets
+        case "snippets":
+            return try parseSnippets(args: args, json: json)
+
         default:
             throw CommandError.unknownCommand(resource)
         }
@@ -146,14 +150,15 @@ public struct GLCommand: Sendable {
             let state = args.option("state")
             let milestone = args.option("milestone")
             let labels = args.option("labels")
-            let assignee = args.option("assignee")
+            let assigneeId = args.option("assignee-id").flatMap(Int.init)
+            let assigneeUsername = args.option("assignee") ?? args.option("assignee-username")
             let search = args.option("search")
             let page = args.option("page").flatMap(Int.init) ?? 1
             let perPage = args.option("per-page").flatMap(Int.init) ?? 20
             return GLCommand { client in
                 try await Formatter.formatIssues(
                     client.listIssues(project: project, state: state, milestone: milestone,
-                                      labels: labels, assignee: assignee, search: search,
+                                      labels: labels, assigneeId: assigneeId, assigneeUsername: assigneeUsername, search: search,
                                       page: page, perPage: perPage),
                     json: json
                 )
@@ -174,11 +179,14 @@ public struct GLCommand: Sendable {
             let milestoneId = args.option("milestone-id").flatMap(Int.init)
             let dueDate = args.option("due-date")
             let weight = args.option("weight").flatMap(Int.init)
+            let assigneeIdsOpt = args.option("assignee-ids")
+            let assigneeNamesOpt = args.option("assignee")
             return GLCommand { client in
+                let assigneeIds = try await resolveAssigneeIDs(client: client, assigneeIds: assigneeIdsOpt, assignees: assigneeNamesOpt)
                 let params = CreateIssueParams(
                     title: title, description: description,
                     milestoneId: milestoneId, labels: labels,
-                    dueDate: dueDate, weight: weight
+                    assigneeIds: assigneeIds, dueDate: dueDate, weight: weight
                 )
                 return try await Formatter.formatIssue(client.createIssue(project: project, params: params), json: json)
             }
@@ -195,12 +203,15 @@ public struct GLCommand: Sendable {
             let milestoneId = args.option("milestone-id").flatMap(Int.init)
             let dueDate = args.option("due-date")
             let weight = args.option("weight").flatMap(Int.init)
+            let assigneeIdsOpt = args.option("assignee-ids")
+            let assigneeNamesOpt = args.option("assignee")
             return GLCommand { client in
+                let assigneeIds = try await resolveAssigneeIDs(client: client, assigneeIds: assigneeIdsOpt, assignees: assigneeNamesOpt)
                 let params = UpdateIssueParams(
                     title: title, description: description,
                     milestoneId: milestoneId, labels: labels,
                     addLabels: addLabels, removeLabels: removeLabels,
-                    stateEvent: stateEvent,
+                    stateEvent: stateEvent, assigneeIds: assigneeIds,
                     dueDate: dueDate, weight: weight
                 )
                 return try await Formatter.formatIssue(client.updateIssue(project: project, iid: iid, params: params), json: json)
@@ -225,7 +236,7 @@ public struct GLCommand: Sendable {
             let iid = try requireInt(args.positional(3), name: "iid")
             return GLCommand { client in
                 try await client.deleteIssue(project: project, iid: iid)
-                return "Issue #\(iid) deleted."
+                return Formatter.actionResult("Issue #\(iid) deleted.", json: json, action: "deleted", resource: "issue", id: "\(iid)")
             }
 
         case "move":
@@ -310,7 +321,7 @@ public struct GLCommand: Sendable {
             let noteId = try requireInt(args.positional(5), name: "note-id")
             return GLCommand { client in
                 try await client.deleteIssueNote(project: project, issueIid: iid, noteId: noteId)
-                return "Note \(noteId) deleted."
+                return Formatter.actionResult("Note \(noteId) deleted.", json: json, action: "deleted", resource: "issue_note", id: "\(noteId)")
             }
         default:
             throw CommandError.unknownCommand("issues notes \(sub)")
@@ -323,11 +334,20 @@ public struct GLCommand: Sendable {
         case "list":
             let project = try require(args.positional(2), usage: "milestones list <project>")
             let state = args.option("state")
+            let title = args.option("title")
+            let search = args.option("search")
+            let iids = try parseIntCSV(args.option("iids"), optionName: "--iids")
+            let updatedBefore = args.option("updated-before")
+            let updatedAfter = args.option("updated-after")
             let page = args.option("page").flatMap(Int.init) ?? 1
             let perPage = args.option("per-page").flatMap(Int.init) ?? 20
             return GLCommand { client in
                 try await Formatter.formatMilestones(
-                    client.listMilestones(project: project, state: state, page: page, perPage: perPage),
+                    client.listMilestones(
+                        project: project, state: state, title: title, search: search,
+                        iids: iids.isEmpty ? nil : iids, updatedBefore: updatedBefore, updatedAfter: updatedAfter,
+                        page: page, perPage: perPage
+                    ),
                     json: json
                 )
             }
@@ -364,7 +384,7 @@ public struct GLCommand: Sendable {
             let id = try requireInt(args.positional(3), name: "milestone-id")
             return GLCommand { client in
                 try await client.deleteMilestone(project: project, milestoneId: id)
-                return "Milestone \(id) deleted."
+                return Formatter.actionResult("Milestone \(id) deleted.", json: json, action: "deleted", resource: "milestone", id: "\(id)")
             }
         case "issues":
             let project = try require(args.positional(2), usage: "milestones issues <project> <id>")
@@ -422,9 +442,12 @@ public struct GLCommand: Sendable {
             let description = args.option("description") ?? args.option("desc")
             let labels = args.option("labels")
             let milestoneId = args.option("milestone-id").flatMap(Int.init)
+            let assigneeIdsOpt = args.option("assignee-ids")
+            let assigneeNamesOpt = args.option("assignee")
             return GLCommand { client in
+                let assigneeIds = try await resolveAssigneeIDs(client: client, assigneeIds: assigneeIdsOpt, assignees: assigneeNamesOpt)
                 let params = CreateMRParams(sourceBranch: source, targetBranch: target, title: title,
-                                            description: description, milestoneId: milestoneId, labels: labels)
+                                            description: description, milestoneId: milestoneId, labels: labels, assigneeIds: assigneeIds)
                 return try await Formatter.formatMR(client.createMergeRequest(project: project, params: params), json: json)
             }
         case "update":
@@ -436,9 +459,12 @@ public struct GLCommand: Sendable {
             let labels = args.option("labels")
             let stateEvent = args.option("state-event")
             let milestoneId = args.option("milestone-id").flatMap(Int.init)
+            let assigneeIdsOpt = args.option("assignee-ids")
+            let assigneeNamesOpt = args.option("assignee")
             return GLCommand { client in
+                let assigneeIds = try await resolveAssigneeIDs(client: client, assigneeIds: assigneeIdsOpt, assignees: assigneeNamesOpt)
                 let params = UpdateMRParams(title: title, description: description, targetBranch: targetBranch,
-                                            milestoneId: milestoneId, labels: labels, stateEvent: stateEvent)
+                                            milestoneId: milestoneId, labels: labels, stateEvent: stateEvent, assigneeIds: assigneeIds)
                 return try await Formatter.formatMR(client.updateMergeRequest(project: project, iid: iid, params: params), json: json)
             }
         case "merge":
@@ -511,7 +537,7 @@ public struct GLCommand: Sendable {
             let noteId = try requireInt(args.positional(5), name: "note-id")
             return GLCommand { client in
                 try await client.deleteMRNote(project: project, mrIid: iid, noteId: noteId)
-                return "Note \(noteId) deleted."
+                return Formatter.actionResult("Note \(noteId) deleted.", json: json, action: "deleted", resource: "mr_note", id: "\(noteId)")
             }
         default:
             throw CommandError.unknownCommand("mr notes \(sub)")
@@ -539,8 +565,9 @@ public struct GLCommand: Sendable {
             let name = try require(args.option("name"), usage: "labels create ... --name <name>")
             let color = try require(args.option("color"), usage: "labels create ... --color <#rrggbb>")
             let description = args.option("description") ?? args.option("desc")
+            let priority = args.option("priority").flatMap(Int.init)
             return GLCommand { client in
-                let params = CreateLabelParams(name: name, color: color, description: description)
+                let params = CreateLabelParams(name: name, color: color, description: description, priority: priority)
                 return try await Formatter.formatLabel(client.createLabel(project: project, params: params), json: json)
             }
         case "update":
@@ -549,8 +576,9 @@ public struct GLCommand: Sendable {
             let newName = args.option("name")
             let color = args.option("color")
             let description = args.option("description") ?? args.option("desc")
+            let priority = args.option("priority").flatMap(Int.init)
             return GLCommand { client in
-                let params = UpdateLabelParams(newName: newName, color: color, description: description)
+                let params = UpdateLabelParams(newName: newName, color: color, description: description, priority: priority)
                 return try await Formatter.formatLabel(client.updateLabel(project: project, labelId: id, params: params), json: json)
             }
         case "delete":
@@ -558,7 +586,7 @@ public struct GLCommand: Sendable {
             let id = try requireInt(args.positional(3), name: "label-id")
             return GLCommand { client in
                 try await client.deleteLabel(project: project, labelId: id)
-                return "Label \(id) deleted."
+                return Formatter.actionResult("Label \(id) deleted.", json: json, action: "deleted", resource: "label", id: "\(id)")
             }
         default:
             throw CommandError.unknownCommand("labels \(sub)")
@@ -613,8 +641,19 @@ public struct GLCommand: Sendable {
         case "list":
             let group = try require(args.positional(3), usage: "groups milestones list <group>")
             let state = args.option("state")
+            let title = args.option("title")
+            let search = args.option("search")
+            let iids = try parseIntCSV(args.option("iids"), optionName: "--iids")
+            let updatedBefore = args.option("updated-before")
+            let updatedAfter = args.option("updated-after")
             return GLCommand { client in
-                try await Formatter.formatMilestones(client.listGroupMilestones(group: group, state: state), json: json)
+                try await Formatter.formatMilestones(
+                    client.listGroupMilestones(
+                        group: group, state: state, title: title, search: search,
+                        iids: iids.isEmpty ? nil : iids, updatedBefore: updatedBefore, updatedAfter: updatedAfter
+                    ),
+                    json: json
+                )
             }
         case "get":
             let group = try require(args.positional(3), usage: "groups milestones get <group> <id>")
@@ -649,7 +688,7 @@ public struct GLCommand: Sendable {
             let id = try requireInt(args.positional(4), name: "milestone-id")
             return GLCommand { client in
                 try await client.deleteGroupMilestone(group: group, milestoneId: id)
-                return "Group milestone \(id) deleted."
+                return Formatter.actionResult("Group milestone \(id) deleted.", json: json, action: "deleted", resource: "group_milestone", id: "\(id)")
             }
         default:
             throw CommandError.unknownCommand("groups milestones \(sub)")
@@ -692,7 +731,7 @@ public struct GLCommand: Sendable {
             let userId = try requireInt(args.option("user"), name: "--user")
             return GLCommand { client in
                 try await client.removeProjectMember(project: project, userId: userId)
-                return "Member \(userId) removed."
+                return Formatter.actionResult("Member \(userId) removed.", json: json, action: "removed", resource: "member", id: "\(userId)")
             }
         default:
             throw CommandError.unknownCommand("members \(sub)")
@@ -728,7 +767,7 @@ public struct GLCommand: Sendable {
             let branch = try require(args.positional(3), usage: "branches delete <project> <branch>")
             return GLCommand { client in
                 try await client.deleteBranch(project: project, branch: branch)
-                return "Branch '\(branch)' deleted."
+                return Formatter.actionResult("Branch '\(branch)' deleted.", json: json, action: "deleted", resource: "branch", id: branch)
             }
         default:
             throw CommandError.unknownCommand("branches \(sub)")
@@ -776,7 +815,7 @@ public struct GLCommand: Sendable {
             let id = try requireInt(args.positional(3), name: "pipeline-id")
             return GLCommand { client in
                 try await client.deletePipeline(project: project, pipelineId: id)
-                return "Pipeline \(id) deleted."
+                return Formatter.actionResult("Pipeline \(id) deleted.", json: json, action: "deleted", resource: "pipeline", id: "\(id)")
             }
         default:
             throw CommandError.unknownCommand("pipelines \(sub)")
@@ -822,6 +861,7 @@ public struct GLCommand: Sendable {
             let tag = try require(args.positional(3), usage: "releases delete <project> <tag>")
             return GLCommand { client in
                 let r = try await client.deleteRelease(project: project, tagName: tag)
+                if json { return r.prettyJSON() }
                 return "Release '\(r.tagName)' deleted."
             }
         default:
@@ -850,8 +890,19 @@ public struct GLCommand: Sendable {
             let title = try require(args.option("title"), usage: "workitems create ... --title <title>")
             let typeId = args.option("type-id")
             let description = args.option("description") ?? args.option("desc")
+            let milestoneId = args.option("milestone-id").flatMap(Int.init)
+            let dueDate = args.option("due-date")
+            let startDate = args.option("start-date")
+            let weight = args.option("weight").flatMap(Int.init)
+            let assigneeIdsOpt = args.option("assignee-ids")
+            let assigneeNamesOpt = args.option("assignee")
             return GLCommand { client in
-                let params = CreateWorkItemParams(title: title, workItemTypeId: typeId, description: description)
+                let assigneeIds = try await resolveAssigneeIDs(client: client, assigneeIds: assigneeIdsOpt, assignees: assigneeNamesOpt)
+                let params = CreateWorkItemParams(
+                    title: title, workItemTypeId: typeId, description: description,
+                    assigneeIds: assigneeIds, milestoneId: milestoneId, dueDate: dueDate,
+                    startDate: startDate, weight: weight
+                )
                 return try await Formatter.formatWorkItem(client.createWorkItem(project: project, params: params), json: json)
             }
         case "update":
@@ -860,8 +911,19 @@ public struct GLCommand: Sendable {
             let title = args.option("title")
             let description = args.option("description") ?? args.option("desc")
             let stateEvent = args.option("state-event")
+            let milestoneId = args.option("milestone-id").flatMap(Int.init)
+            let dueDate = args.option("due-date")
+            let startDate = args.option("start-date")
+            let weight = args.option("weight").flatMap(Int.init)
+            let assigneeIdsOpt = args.option("assignee-ids")
+            let assigneeNamesOpt = args.option("assignee")
             return GLCommand { client in
-                let params = UpdateWorkItemParams(title: title, description: description, stateEvent: stateEvent)
+                let assigneeIds = try await resolveAssigneeIDs(client: client, assigneeIds: assigneeIdsOpt, assignees: assigneeNamesOpt)
+                let params = UpdateWorkItemParams(
+                    title: title, description: description, stateEvent: stateEvent,
+                    assigneeIds: assigneeIds, milestoneId: milestoneId, dueDate: dueDate,
+                    startDate: startDate, weight: weight
+                )
                 return try await Formatter.formatWorkItem(client.updateWorkItem(project: project, iid: iid, params: params), json: json)
             }
         case "close":
@@ -881,7 +943,7 @@ public struct GLCommand: Sendable {
             let iid = try requireInt(args.positional(3), name: "iid")
             return GLCommand { client in
                 try await client.deleteWorkItem(project: project, iid: iid)
-                return "Work item \(iid) deleted."
+                return Formatter.actionResult("Work item \(iid) deleted.", json: json, action: "deleted", resource: "work_item", id: "\(iid)")
             }
         default:
             throw CommandError.unknownCommand("workitems \(sub)")
@@ -919,14 +981,95 @@ public struct GLCommand: Sendable {
             let tag = try require(args.positional(3), usage: "tags delete <project> <tag>")
             return GLCommand { client in
                 try await client.deleteTag(project: project, tagName: tag)
-                return "Tag '\(tag)' deleted."
+                return Formatter.actionResult("Tag '\(tag)' deleted.", json: json, action: "deleted", resource: "tag", id: tag)
             }
         default:
             throw CommandError.unknownCommand("tags \(sub)")
         }
     }
 
+    private static func parseSnippets(args: ParsedArgs, json: Bool) throws -> GLCommand {
+        let sub = args.positional(1) ?? "list"
+        switch sub {
+        case "list":
+            let project = try require(args.positional(2), usage: "snippets list <project>")
+            let page = args.option("page").flatMap(Int.init) ?? 1
+            let perPage = args.option("per-page").flatMap(Int.init) ?? 20
+            return GLCommand { client in
+                try await Formatter.formatSnippets(client.listSnippets(project: project, page: page, perPage: perPage), json: json)
+            }
+        case "get":
+            let project = try require(args.positional(2), usage: "snippets get <project> <id>")
+            let id = try requireInt(args.positional(3), name: "snippet-id")
+            return GLCommand { client in
+                try await Formatter.formatSnippet(client.getSnippet(project: project, snippetId: id), json: json)
+            }
+        case "create":
+            let project = try require(args.positional(2), usage: "snippets create <project> --title <t> --file-name <name> --content <text>|--file <path>")
+            let title = try require(args.option("title"), usage: "snippets create ... --title <t>")
+            // Content may come from --content or be read from a local --file.
+            var content = args.option("content")
+            var fileName = args.option("file-name")
+            if let path = args.option("file") {
+                let fileContent = try readFileContent(path)
+                if content == nil { content = fileContent }
+                if fileName == nil { fileName = (path as NSString).lastPathComponent }
+            }
+            let resolvedContent = try require(content, usage: "snippets create ... provide --content <text> or --file <path>")
+            let resolvedFileName = try require(fileName, usage: "snippets create ... --file-name <name> (or pass --file to derive it)")
+            let description = args.option("description") ?? args.option("desc")
+            let visibility = args.option("visibility") ?? "private"
+            return GLCommand { client in
+                let params = CreateSnippetParams(
+                    title: title, fileName: resolvedFileName, content: resolvedContent,
+                    description: description, visibility: visibility
+                )
+                return try await Formatter.formatSnippet(client.createSnippet(project: project, params: params), json: json)
+            }
+        case "update":
+            let project = try require(args.positional(2), usage: "snippets update <project> <id>")
+            let id = try requireInt(args.positional(3), name: "snippet-id")
+            var content = args.option("content")
+            var fileName = args.option("file-name")
+            if let path = args.option("file") {
+                let fileContent = try readFileContent(path)
+                if content == nil { content = fileContent }
+                if fileName == nil { fileName = (path as NSString).lastPathComponent }
+            }
+            let title = args.option("title")
+            let description = args.option("description") ?? args.option("desc")
+            let visibility = args.option("visibility")
+            let finalContent = content
+            let finalFileName = fileName
+            return GLCommand { client in
+                let params = UpdateSnippetParams(
+                    title: title, fileName: finalFileName, content: finalContent,
+                    description: description, visibility: visibility
+                )
+                return try await Formatter.formatSnippet(client.updateSnippet(project: project, snippetId: id, params: params), json: json)
+            }
+        case "delete":
+            let project = try require(args.positional(2), usage: "snippets delete <project> <id>")
+            let id = try requireInt(args.positional(3), name: "snippet-id")
+            return GLCommand { client in
+                try await client.deleteSnippet(project: project, snippetId: id)
+                return Formatter.actionResult("Snippet \(id) deleted.", json: json, action: "deleted", resource: "snippet", id: "\(id)")
+            }
+        default:
+            throw CommandError.unknownCommand("snippets \(sub)")
+        }
+    }
+
     // MARK: - Helpers
+
+    /// Read the contents of a local file for use as a snippet body.
+    private static func readFileContent(_ path: String) throws -> String {
+        do {
+            return try String(contentsOfFile: path, encoding: .utf8)
+        } catch {
+            throw CommandError.invalidArgument("--file", "could not read file at \(path)")
+        }
+    }
 
     private static func require(_ value: String?, usage: String) throws -> String {
         guard let v = value, !v.isEmpty else {
@@ -943,6 +1086,49 @@ public struct GLCommand: Sendable {
             throw CommandError.invalidArgument(name, "'\(raw)' is not a valid integer")
         }
         return n
+    }
+
+    private static func parseCSV(_ value: String?) -> [String] {
+        guard let raw = value?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return []
+        }
+        return raw
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func parseIntCSV(_ value: String?, optionName: String) throws -> [Int] {
+        let values = parseCSV(value)
+        guard !values.isEmpty else { return [] }
+        return try values.map { raw in
+            guard let n = Int(raw) else {
+                throw CommandError.invalidArgument(optionName, "'\(raw)' is not a valid integer")
+            }
+            return n
+        }
+    }
+
+    private static func resolveAssigneeIDs(
+        client: GitLabAPIClient,
+        assigneeIds: String? = nil,
+        assignees: String? = nil
+    ) async throws -> [Int]? {
+        var ids = try parseIntCSV(assigneeIds, optionName: "--assignee-ids")
+        let usernames = parseCSV(assignees)
+
+        if !usernames.isEmpty {
+            for username in usernames {
+                let users = try await client.searchUsers(query: username, perPage: 100)
+                guard let user = users.first(where: { $0.username == username }) ?? users.first else {
+                    throw CommandError.invalidArgument("--assignee", "No user found for '\(username)'")
+                }
+                ids.append(user.id)
+            }
+        }
+
+        guard !ids.isEmpty else { return nil }
+        return Array(Set(ids)).sorted()
     }
 
     // MARK: - Help
@@ -971,14 +1157,17 @@ public struct GLCommand: Sendable {
       projects search <query>
 
       issues list     <project> [--state open|closed|all] [--milestone <title>]
-                                [--labels <l1,l2>] [--assignee <username>] [--search <q>]
+                                [--labels <l1,l2>] [--assignee <username>] [--assignee-id <id>]
+                                [--search <q>]
                                 [--page <n>] [--per-page <n>]
       issues get      <project> <iid>
       issues create   <project> --title <t> [--description <d>] [--labels <l>]
                                 [--milestone-id <n>] [--due-date <YYYY-MM-DD>] [--weight <n>]
+                                [--assignee <username>] [--assignee-ids <id1,id2>]
       issues update   <project> <iid> [--title] [--description] [--labels]
                                 [--add-labels] [--remove-labels] [--milestone-id]
                                 [--state-event close|reopen] [--due-date] [--weight]
+                                [--assignee <username>] [--assignee-ids <id1,id2>]
       issues close    <project> <iid>
       issues reopen   <project> <iid>
       issues delete   <project> <iid>
@@ -994,6 +1183,8 @@ public struct GLCommand: Sendable {
       issues notes delete <project> <iid> <note-id>
 
       milestones list   <project> [--state active|closed|all]
+                                   [--title <title>] [--search <q>] [--iids <id1,id2>]
+                                   [--updated-before <iso>] [--updated-after <iso>]
       milestones get    <project> <id>
       milestones create <project> --title <t> [--description <d>]
                                    [--due-date <YYYY-MM-DD>] [--start-date <YYYY-MM-DD>]
@@ -1008,8 +1199,10 @@ public struct GLCommand: Sendable {
       mr get     <project> <iid>
       mr create  <project> --source <branch> --target <branch> --title <t>
                            [--description <d>] [--labels] [--milestone-id]
+                           [--assignee <username>] [--assignee-ids <id1,id2>]
       mr update  <project> <iid> [--title] [--description] [--target-branch]
                                  [--labels] [--milestone-id] [--state-event close|reopen]
+                                 [--assignee <username>] [--assignee-ids <id1,id2>]
       mr merge   <project> <iid> [--message <msg>] [--squash] [--remove-source-branch]
       mr close   <project> <iid>
       mr reopen  <project> <iid>
@@ -1022,8 +1215,8 @@ public struct GLCommand: Sendable {
 
       labels list   <project>
       labels get    <project> <id>
-      labels create <project> --name <name> --color <#rrggbb> [--description <d>]
-      labels update <project> <id> [--name] [--color] [--description]
+      labels create <project> --name <name> --color <#rrggbb> [--description <d>] [--priority <n>]
+      labels update <project> <id> [--name] [--color] [--description] [--priority <n>]
       labels delete <project> <id>
 
       groups list    [--search <q>] [--owned]
@@ -1032,6 +1225,8 @@ public struct GLCommand: Sendable {
       groups subgroups <id-or-path>
       groups members   <id-or-path>
       groups milestones list   <group>
+                              [--state active|closed|all] [--title <t>] [--search <q>]
+                              [--iids <id1,id2>] [--updated-before <iso>] [--updated-after <iso>]
       groups milestones get    <group> <id>
       groups milestones create <group> --title <t>
       groups milestones update <group> <id> [--title] [--state-event]
@@ -1064,7 +1259,13 @@ public struct GLCommand: Sendable {
       workitems list   <project>
       workitems get    <project> <iid>
       workitems create <project> --title <t> [--type-id <id>] [--description <d>]
+                                 [--assignee <username>] [--assignee-ids <id1,id2>]
+                                 [--milestone-id <n>] [--due-date <YYYY-MM-DD>]
+                                 [--start-date <YYYY-MM-DD>] [--weight <n>]
       workitems update <project> <iid> [--title <t>] [--description <d>] [--state-event close|reopen]
+                                 [--assignee <username>] [--assignee-ids <id1,id2>]
+                                 [--milestone-id <n>] [--due-date <YYYY-MM-DD>]
+                                 [--start-date <YYYY-MM-DD>] [--weight <n>]
       workitems close  <project> <iid>
       workitems reopen <project> <iid>
       workitems delete <project> <iid>
@@ -1073,6 +1274,15 @@ public struct GLCommand: Sendable {
       tags get    <project> <tag>
       tags create <project> --name <tag> --ref <ref> [--message <msg>]
       tags delete <project> <tag>
+
+      snippets list   <project>
+      snippets get    <project> <id>
+      snippets create <project> --title <t> --file-name <name> (--content <text> | --file <path>)
+                                [--description <d>] [--visibility private|internal|public]
+      snippets update <project> <id> [--title <t>] [--file-name <name>]
+                                [--content <text> | --file <path>] [--description <d>]
+                                [--visibility private|internal|public]
+      snippets delete <project> <id>
 
     ENVIRONMENT
       GITLAB_API_URL   GitLab host, e.g. https://gitlab.com

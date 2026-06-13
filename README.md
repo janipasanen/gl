@@ -1,6 +1,6 @@
 # gl — GitLab CLI
 
-`gl` is a Swift command-line tool for GitLab. It covers the full REST API v4 surface for the resources that matter most in day-to-day project work: projects, issues, milestones, merge requests, labels, groups, members, branches, pipelines, releases, and work items.
+`gl` is a Swift command-line tool for GitLab. It covers the full REST API v4 surface for the resources that matter most in day-to-day project work: projects, issues, milestones, merge requests, labels, groups, members, branches, pipelines, releases, tags, work items, and snippets.
 
 ---
 
@@ -46,6 +46,7 @@ swift test
 **`GITLAB_API_URL`**
 - For GitLab.com use `https://gitlab.com`
 - For self-managed instances use the root URL, e.g. `https://gitlab.mycompany.com`
+- The `/api/v4` suffix is optional — both `https://gitlab.com` and `https://gitlab.com/api/v4` work. The URL must include an `http://` or `https://` scheme and a host, otherwise `gl` exits with `Invalid GitLab API URL`.
 
 **`GITLAB_TOKEN`**
 1. Sign in to GitLab
@@ -68,7 +69,15 @@ export GITLAB_TOKEN=glpat-xxxxxxxxxxxxxxxxxxxx
 gl [--json] <resource> <subcommand> [args] [options]
 ```
 
-Pass `--json` anywhere to get raw pretty-printed JSON instead of formatted tables.
+Pass `--json` anywhere — before the resource, between subcommand and arguments, or at the end — to get raw pretty-printed JSON instead of formatted tables. All three forms are equivalent:
+
+```bash
+gl --json issues get mygroup/proj 45
+gl issues --json get mygroup/proj 45
+gl issues get mygroup/proj 45 --json
+```
+
+Delete/remove actions return a JSON status object in `--json` mode (e.g. `{"action":"deleted","id":"45","resource":"issue","status":"ok"}`) and a plain confirmation line otherwise. Options may also be written as `--key=value`.
 
 ---
 
@@ -104,12 +113,13 @@ gl issues list <project> --state closed
 gl issues list <project> --labels "bug,high"
 gl issues list <project> --milestone "v1.0"
 gl issues list <project> --assignee jdoe
+gl issues list <project> --assignee-id 2
 gl issues list <project> --search "crash"
 gl issues list <project> --page 2 --per-page 50
 
 gl issues get    <project> <iid>
 gl issues create <project> --title "Fix login bug"
-gl issues create <project> --title "…" --description "…" --labels "bug" --milestone-id 10 --due-date 2024-12-31 --weight 3
+gl issues create <project> --title "…" --description "…" --labels "bug" --milestone-id 10 --due-date 2024-12-31 --weight 3 --assignee jdoe
 gl issues update <project> <iid> --title "New title"
 gl issues update <project> <iid> --add-labels "regression" --remove-labels "high"
 gl issues close  <project> <iid>
@@ -140,6 +150,7 @@ gl issues notes delete <project> <iid> <note-id>
 gl milestones list   <project>
 gl milestones list   <project> --state active
 gl milestones list   <project> --state closed
+gl milestones list   <project> --search "v1"
 gl milestones get    <project> <id>
 gl milestones create <project> --title "v2.0" --due-date 2024-06-30 --start-date 2024-03-01
 gl milestones update <project> <id> --title "v2.0 GA" --state-event close
@@ -187,9 +198,9 @@ gl mr notes delete <project> <iid> <note-id>
 ```bash
 gl labels list   <project>
 gl labels get    <project> <id>
-gl labels create <project> --name "bug" --color "#d9534f"
+gl labels create <project> --name "bug" --color "#d9534f" --priority 2
 gl labels create <project> --name "feature" --color "#5cb85c" --description "New feature"
-gl labels update <project> <id> --name "defect" --color "#f00"
+gl labels update <project> <id> --name "defect" --color "#f00" --priority 3
 gl labels delete <project> <id>
 ```
 
@@ -273,8 +284,44 @@ gl releases delete <project> <tag>
 ```bash
 gl workitems list   <project>
 gl workitems get    <project> <iid>
-gl workitems create <project> --title "My task" --type-id <work-item-type-id>
+gl workitems create <project> --title "My task" --type-id <work-item-type-id> --assignee jdoe --weight 3
+gl workitems update <project> <iid> --title "My task" --assignee jdoe --milestone-id 10 --due-date 2024-12-31
 ```
+
+---
+
+### Tags
+
+```bash
+gl tags list   <project>
+gl tags list   <project> --search v1
+gl tags get    <project> <tag>
+gl tags create <project> --name v1.0.0 --ref main --message "Release 1.0.0"
+gl tags delete <project> <tag>
+```
+
+---
+
+### Snippets
+
+```bash
+gl snippets list   <project>
+gl snippets get    <project> <id>
+
+# Create from literal content…
+gl snippets create <project> --title "Helper" --file-name helper.sh --content "echo hi"
+# …or from a local file (file name is derived from the path if --file-name is omitted)
+gl snippets create <project> --title "Helper" --file helper.sh --visibility internal
+
+# Edit / change an existing snippet
+gl snippets update <project> <id> --title "Renamed"
+gl snippets update <project> <id> --file helper.sh
+gl snippets update <project> <id> --visibility public
+
+gl snippets delete <project> <id>
+```
+
+**Visibility:** `private` (default) · `internal` · `public`
 
 ---
 
@@ -302,7 +349,9 @@ Sources/
       Branches.swift
       Pipelines.swift
       Releases.swift
+      Tags.swift
       WorkItems.swift
+      Snippets.swift
     CLI/
       ArgumentParser.swift      — ParsedArgs (positionals + options + flags)
       Formatter.swift           — Table and detail formatters
@@ -326,6 +375,7 @@ Tests/
     PipelineAPITests.swift
     ReleaseAPITests.swift
     WorkItemAPITests.swift
+    SnippetAPITests.swift
 ```
 
 ---

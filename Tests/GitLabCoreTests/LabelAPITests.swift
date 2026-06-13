@@ -30,12 +30,12 @@ final class LabelAPITests: XCTestCase {
             return (r, Data(Fixtures.labelJSON.utf8))
         }
         let client = makeTestClient()
-        let params = CreateLabelParams(name: "bug", color: "#d9534f", description: "Something broken")
+        let params = CreateLabelParams(name: "bug", color: "#d9534f", description: "Something broken", priority: 2)
         let l = try await client.createLabel(project: "p", params: params)
         XCTAssertEqual(l.name, "bug")
         XCTAssertEqual(capturedBody?["name"] as? String, "bug")
         XCTAssertEqual(capturedBody?["color"] as? String, "#d9534f")
-        XCTAssertNil(capturedBody?["priority"])
+        XCTAssertEqual(capturedBody?["priority"] as? Int, 2)
     }
 
     func testUpdateLabel() async throws {
@@ -47,11 +47,11 @@ final class LabelAPITests: XCTestCase {
             return (r, Data(Fixtures.labelJSON.utf8))
         }
         let client = makeTestClient()
-        let params = UpdateLabelParams(newName: "defect", color: "#ff0000")
+        let params = UpdateLabelParams(newName: "defect", color: "#ff0000", priority: 5)
         _ = try await client.updateLabel(project: "p", labelId: 7, params: params)
         XCTAssertEqual(capturedBody?["new_name"] as? String, "defect")
         XCTAssertEqual(capturedBody?["color"] as? String, "#ff0000")
-        XCTAssertNil(capturedBody?["description"])
+        XCTAssertEqual(capturedBody?["priority"] as? Int, 5)
     }
 
     func testDeleteLabel() async throws {

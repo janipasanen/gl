@@ -57,6 +57,20 @@ final class MRAPITests: XCTestCase {
         XCTAssertNil(capturedBody?["assignee_ids"])
     }
 
+    func testCreateMRWithAssignees() async throws {
+        stubRaw(status: 201, json: Fixtures.mrJSON)
+        var capturedBody: [String: Any]?
+        MockURLProtocol.requestHandler = { req in
+            capturedBody = try? JSONSerialization.jsonObject(with: req.httpBody ?? Data()) as? [String: Any]
+            let r = HTTPURLResponse(url: req.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!
+            return (r, Data(Fixtures.mrJSON.utf8))
+        }
+        let client = makeTestClient()
+        let params = CreateMRParams(sourceBranch: "feature/x", targetBranch: "main", title: "Add feature X", assigneeIds: [2, 3])
+        _ = try await client.createMergeRequest(project: "p", params: params)
+        XCTAssertEqual(capturedBody?["assignee_ids"] as? [Int], [2, 3])
+    }
+
     func testUpdateMR() async throws {
         stubRaw(json: Fixtures.mrJSON)
         var capturedBody: [String: Any]?
@@ -71,6 +85,20 @@ final class MRAPITests: XCTestCase {
         XCTAssertEqual(capturedBody?["title"] as? String, "Updated title")
         XCTAssertEqual(capturedBody?["state_event"] as? String, "close")
         XCTAssertNil(capturedBody?["target_branch"])
+    }
+
+    func testUpdateMRWithAssignees() async throws {
+        stubRaw(json: Fixtures.mrJSON)
+        var capturedBody: [String: Any]?
+        MockURLProtocol.requestHandler = { req in
+            capturedBody = try? JSONSerialization.jsonObject(with: req.httpBody ?? Data()) as? [String: Any]
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, Data(Fixtures.mrJSON.utf8))
+        }
+        let client = makeTestClient()
+        let params = UpdateMRParams(assigneeIds: [2])
+        _ = try await client.updateMergeRequest(project: "p", iid: 3, params: params)
+        XCTAssertEqual(capturedBody?["assignee_ids"] as? [Int], [2])
     }
 
     func testCloseMR() async throws {

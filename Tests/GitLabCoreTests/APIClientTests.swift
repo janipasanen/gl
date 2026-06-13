@@ -97,4 +97,59 @@ final class APIClientTests: XCTestCase {
         XCTAssertFalse(encoded.contains("/"))
         XCTAssertTrue(encoded.contains("%2F"))
     }
+
+    // MARK: - Base URL normalisation (regression for #5)
+
+    private func capturedPath(forBaseURL base: String) async throws -> String {
+        var captured: String?
+        MockURLProtocol.requestHandler = { req in
+            captured = req.url?.absoluteString
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, Data("{}".utf8))
+        }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let client = GitLabAPIClient(
+            baseURL: URL(string: base)!,
+            token: "t",
+            session: URLSession(configuration: config)
+        )
+        _ = try await client.request(path: "projects/42")
+        return captured ?? ""
+    }
+
+    func testBaseURLWithoutApiV4Suffix() async throws {
+        let url = try await capturedPath(forBaseURL: "https://gitlab.example.com")
+        XCTAssertEqual(url, "https://gitlab.example.com/api/v4/projects/42")
+    }
+
+    func testBaseURLWithApiV4Suffix() async throws {
+        let url = try await capturedPath(forBaseURL: "https://gitlab.example.com/api/v4")
+        XCTAssertEqual(url, "https://gitlab.example.com/api/v4/projects/42")
+    }
+
+    func testBaseURLWithTrailingSlash() async throws {
+        let url = try await capturedPath(forBaseURL: "https://gitlab.example.com/")
+        XCTAssertEqual(url, "https://gitlab.example.com/api/v4/projects/42")
+    }
+
+    func testBaseURLWithApiV4AndTrailingSlash() async throws {
+        let url = try await capturedPath(forBaseURL: "https://gitlab.example.com/api/v4/")
+        XCTAssertEqual(url, "https://gitlab.example.com/api/v4/projects/42")
+    }
+
+    func testBaseURLWithSubpath() async throws {
+        // self-managed GitLab served under a subpath
+        let url = try await capturedPath(forBaseURL: "https://example.com/gitlab")
+        XCTAssertEqual(url, "https://example.com/gitlab/api/v4/projects/42")
+    }
+
+    func testInitRejectsURLWithoutHost() {
+        XCTAssertThrowsError(try GitLabAPIClient(environment: [
+            "GITLAB_API_URL": "https://",
+            "GITLAB_TOKEN": "tok",
+        ])) { error in
+            XCTAssertTrue(error.localizedDescription.contains("Invalid GitLab API URL"))
+        }
+    }
 }

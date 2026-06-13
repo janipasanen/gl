@@ -10,7 +10,8 @@ extension GitLabAPIClient {
         state: String? = nil,
         milestone: String? = nil,
         labels: String? = nil,
-        assignee: String? = nil,
+        assigneeId: Int? = nil,
+        assigneeUsername: String? = nil,
         search: String? = nil,
         page: Int = 1,
         perPage: Int = 20
@@ -22,7 +23,8 @@ extension GitLabAPIClient {
         if let v = state     { items.append(.init(name: "state", value: v)) }
         if let v = milestone { items.append(.init(name: "milestone", value: v)) }
         if let v = labels    { items.append(.init(name: "labels", value: v)) }
-        if let v = assignee  { items.append(.init(name: "assignee_username", value: v)) }
+        if let v = assigneeId { items.append(.init(name: "assignee_id", value: "\(v)")) }
+        if let v = assigneeUsername  { items.append(.init(name: "assignee_username", value: v)) }
         if let v = search    { items.append(.init(name: "search", value: v)) }
         return try await get(path: "projects/\(Self.encodePath(project))/issues", queryItems: items)
     }

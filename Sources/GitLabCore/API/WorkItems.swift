@@ -21,7 +21,7 @@ extension GitLabAPIClient {
         try await post(path: "projects/\(Self.encodePath(project))/work_items", body: params)
     }
 
-    /// Update a work item (title, description, state).
+    /// Update a work item.
     public func updateWorkItem(project: String, iid: Int, params: UpdateWorkItemParams) async throws -> GLWorkItem {
         try await put(path: "projects/\(Self.encodePath(project))/work_items/\(iid)", body: params)
     }

@@ -623,9 +623,19 @@ public struct GLWorkItem: Codable, Sendable {
     public let iid: Int
     public let title: String
     public let state: String?
+    public let description: String?
+    public let labels: [String]?
+    public let milestone: GLMilestoneRef?
+    public let assignees: [GLUserRef]?
+    public let author: GLUserRef?
     public let workItemType: GLWorkItemType?
     public let createdAt: Date?
     public let updatedAt: Date?
+    public let dueDate: String?
+    public let weight: Int?
+    public let userNotesCount: Int?
+    public let confidential: Bool?
+    public let timeStats: GLTimeStats?
     public let webUrl: String?
 }
 
@@ -638,9 +648,25 @@ public struct CreateWorkItemParams: Encodable, Sendable {
     public var title: String
     public var workItemTypeId: String?
     public var description: String?
+    public var assigneeIds: [Int]?
+    public var milestoneId: Int?
+    public var dueDate: String?
+    public var startDate: String?
+    public var weight: Int?
 
-    public init(title: String, workItemTypeId: String? = nil, description: String? = nil) {
+    public init(
+        title: String,
+        workItemTypeId: String? = nil,
+        description: String? = nil,
+        assigneeIds: [Int]? = nil,
+        milestoneId: Int? = nil,
+        dueDate: String? = nil,
+        startDate: String? = nil,
+        weight: Int? = nil
+    ) {
         self.title = title; self.workItemTypeId = workItemTypeId; self.description = description
+        self.assigneeIds = assigneeIds; self.milestoneId = milestoneId
+        self.dueDate = dueDate; self.startDate = startDate; self.weight = weight
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -648,18 +674,41 @@ public struct CreateWorkItemParams: Encodable, Sendable {
         try c.encode(title, forKey: .title)
         try c.encodeIfPresent(workItemTypeId, forKey: .workItemTypeId)
         try c.encodeIfPresent(description, forKey: .description)
+        try c.encodeIfPresent(assigneeIds, forKey: .assigneeIds)
+        try c.encodeIfPresent(milestoneId, forKey: .milestoneId)
+        try c.encodeIfPresent(dueDate, forKey: .dueDate)
+        try c.encodeIfPresent(startDate, forKey: .startDate)
+        try c.encodeIfPresent(weight, forKey: .weight)
     }
 
-    enum CodingKeys: String, CodingKey { case title, workItemTypeId, description }
+    enum CodingKeys: String, CodingKey {
+        case title, workItemTypeId, description, assigneeIds, milestoneId, dueDate, startDate, weight
+    }
 }
 
 public struct UpdateWorkItemParams: Encodable, Sendable {
     public var title: String?
     public var description: String?
     public var stateEvent: String?
+    public var assigneeIds: [Int]?
+    public var milestoneId: Int?
+    public var dueDate: String?
+    public var startDate: String?
+    public var weight: Int?
 
-    public init(title: String? = nil, description: String? = nil, stateEvent: String? = nil) {
+    public init(
+        title: String? = nil,
+        description: String? = nil,
+        stateEvent: String? = nil,
+        assigneeIds: [Int]? = nil,
+        milestoneId: Int? = nil,
+        dueDate: String? = nil,
+        startDate: String? = nil,
+        weight: Int? = nil
+    ) {
         self.title = title; self.description = description; self.stateEvent = stateEvent
+        self.assigneeIds = assigneeIds; self.milestoneId = milestoneId
+        self.dueDate = dueDate; self.startDate = startDate; self.weight = weight
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -667,9 +716,16 @@ public struct UpdateWorkItemParams: Encodable, Sendable {
         try c.encodeIfPresent(title, forKey: .title)
         try c.encodeIfPresent(description, forKey: .description)
         try c.encodeIfPresent(stateEvent, forKey: .stateEvent)
+        try c.encodeIfPresent(assigneeIds, forKey: .assigneeIds)
+        try c.encodeIfPresent(milestoneId, forKey: .milestoneId)
+        try c.encodeIfPresent(dueDate, forKey: .dueDate)
+        try c.encodeIfPresent(startDate, forKey: .startDate)
+        try c.encodeIfPresent(weight, forKey: .weight)
     }
 
-    enum CodingKeys: String, CodingKey { case title, description, stateEvent }
+    enum CodingKeys: String, CodingKey {
+        case title, description, stateEvent, assigneeIds, milestoneId, dueDate, startDate, weight
+    }
 }
 
 public struct GLWorkItemsResponse: Codable, Sendable {
@@ -678,6 +734,76 @@ public struct GLWorkItemsResponse: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case workItems = "work_items"
     }
+}
+
+// MARK: - Snippet
+
+public struct GLSnippet: Codable, Sendable, Identifiable {
+    public let id: Int
+    public let title: String
+    public let fileName: String?
+    public let description: String?
+    public let visibility: String?
+    public let author: GLUserRef?
+    public let projectId: Int?
+    public let webUrl: String?
+    public let rawUrl: String?
+    public let createdAt: Date?
+    public let updatedAt: Date?
+    public let files: [GLSnippetFile]?
+}
+
+public struct GLSnippetFile: Codable, Sendable {
+    public let path: String?
+    public let rawUrl: String?
+}
+
+public struct CreateSnippetParams: Encodable, Sendable {
+    public var title: String
+    public var fileName: String
+    public var content: String
+    public var description: String?
+    public var visibility: String?
+
+    public init(title: String, fileName: String, content: String, description: String? = nil, visibility: String? = nil) {
+        self.title = title; self.fileName = fileName; self.content = content
+        self.description = description; self.visibility = visibility
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(title, forKey: .title)
+        try c.encode(fileName, forKey: .fileName)
+        try c.encode(content, forKey: .content)
+        try c.encodeIfPresent(description, forKey: .description)
+        try c.encodeIfPresent(visibility, forKey: .visibility)
+    }
+
+    enum CodingKeys: String, CodingKey { case title, fileName, content, description, visibility }
+}
+
+public struct UpdateSnippetParams: Encodable, Sendable {
+    public var title: String?
+    public var fileName: String?
+    public var content: String?
+    public var description: String?
+    public var visibility: String?
+
+    public init(title: String? = nil, fileName: String? = nil, content: String? = nil, description: String? = nil, visibility: String? = nil) {
+        self.title = title; self.fileName = fileName; self.content = content
+        self.description = description; self.visibility = visibility
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(title, forKey: .title)
+        try c.encodeIfPresent(fileName, forKey: .fileName)
+        try c.encodeIfPresent(content, forKey: .content)
+        try c.encodeIfPresent(description, forKey: .description)
+        try c.encodeIfPresent(visibility, forKey: .visibility)
+    }
+
+    enum CodingKeys: String, CodingKey { case title, fileName, content, description, visibility }
 }
 
 // MARK: - Access levels

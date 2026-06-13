@@ -49,7 +49,8 @@ public struct GitLabAPIClient: Sendable {
         }
         let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed),
-              url.scheme == "http" || url.scheme == "https" else {
+              url.scheme == "http" || url.scheme == "https",
+              let host = url.host, !host.isEmpty else {
             throw ClientError.invalidURL(rawURL)
         }
         self.init(baseURL: url, token: tok)
@@ -69,7 +70,11 @@ public struct GitLabAPIClient: Sendable {
         components.scheme = baseURL.scheme
         components.host = baseURL.host
         components.port = baseURL.port
-        let basePath = baseURL.path.hasSuffix("/") ? String(baseURL.path.dropLast()) : baseURL.path
+        // Normalise the base path so both "https://host" and "https://host/api/v4"
+        // (with or without a trailing slash) resolve to the same endpoint.
+        var basePath = baseURL.path
+        while basePath.hasSuffix("/") { basePath.removeLast() }
+        if basePath.hasSuffix("/api/v4") { basePath.removeLast("/api/v4".count) }
         components.percentEncodedPath = "\(basePath)/api/v4/\(trimmed)"
         if !queryItems.isEmpty {
             components.queryItems = queryItems

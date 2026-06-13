@@ -8,6 +8,11 @@ extension GitLabAPIClient {
     public func listGroupMilestones(
         group: String,
         state: String? = nil,
+        title: String? = nil,
+        search: String? = nil,
+        iids: [Int]? = nil,
+        updatedBefore: String? = nil,
+        updatedAfter: String? = nil,
         page: Int = 1,
         perPage: Int = 20
     ) async throws -> [GLMilestone] {
@@ -16,6 +21,15 @@ extension GitLabAPIClient {
             .init(name: "per_page", value: "\(perPage)"),
         ]
         if let s = state { items.append(.init(name: "state", value: s)) }
+        if let t = title { items.append(.init(name: "title", value: t)) }
+        if let q = search { items.append(.init(name: "search", value: q)) }
+        if let list = iids {
+            for iid in list {
+                items.append(.init(name: "iids[]", value: "\(iid)"))
+            }
+        }
+        if let v = updatedBefore { items.append(.init(name: "updated_before", value: v)) }
+        if let v = updatedAfter { items.append(.init(name: "updated_after", value: v)) }
         return try await get(path: "groups/\(Self.encodePath(group))/milestones", queryItems: items)
     }
 

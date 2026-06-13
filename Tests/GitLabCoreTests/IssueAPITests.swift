@@ -30,7 +30,7 @@ final class IssueAPITests: XCTestCase {
         let client = makeTestClient()
         _ = try await client.listIssues(
             project: "p", state: "opened", milestone: "v1.0",
-            labels: "bug", assignee: "jdoe", search: "crash",
+            labels: "bug", assigneeUsername: "jdoe", search: "crash",
             page: 2, perPage: 5
         )
         let q = capturedURL?.query ?? ""
@@ -41,6 +41,18 @@ final class IssueAPITests: XCTestCase {
         XCTAssertTrue(q.contains("search=crash"))
         XCTAssertTrue(q.contains("page=2"))
         XCTAssertTrue(q.contains("per_page=5"))
+    }
+
+    func testListIssuesAssigneeIdQueryParam() async throws {
+        var capturedQuery: String?
+        MockURLProtocol.requestHandler = { req in
+            capturedQuery = req.url?.query
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, Data(Fixtures.issuesArrayJSON.utf8))
+        }
+        let client = makeTestClient()
+        _ = try await client.listIssues(project: "p", assigneeId: 2)
+        XCTAssertTrue(capturedQuery?.contains("assignee_id=2") == true)
     }
 
     func testGetIssue() async throws {
@@ -79,6 +91,20 @@ final class IssueAPITests: XCTestCase {
         XCTAssertNil(capturedBody?["assignee_ids"])
     }
 
+    func testCreateIssueWithAssignees() async throws {
+        stubRaw(json: Fixtures.issueJSON)
+        var capturedBody: [String: Any]?
+        MockURLProtocol.requestHandler = { req in
+            capturedBody = try? JSONSerialization.jsonObject(with: req.httpBody ?? Data()) as? [String: Any]
+            let r = HTTPURLResponse(url: req.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!
+            return (r, Data(Fixtures.issueJSON.utf8))
+        }
+        let client = makeTestClient()
+        let params = CreateIssueParams(title: "Fix", assigneeIds: [2, 3])
+        _ = try await client.createIssue(project: "mygroup/my-project", params: params)
+        XCTAssertEqual(capturedBody?["assignee_ids"] as? [Int], [2, 3])
+    }
+
     func testUpdateIssue() async throws {
         stubRaw(json: Fixtures.issueJSON)
         var capturedMethod: String?
@@ -91,6 +117,20 @@ final class IssueAPITests: XCTestCase {
         let params = UpdateIssueParams(title: "Updated title")
         _ = try await client.updateIssue(project: "mygroup/my-project", iid: 1, params: params)
         XCTAssertEqual(capturedMethod, "PUT")
+    }
+
+    func testUpdateIssueWithAssignees() async throws {
+        stubRaw(json: Fixtures.issueJSON)
+        var capturedBody: [String: Any]?
+        MockURLProtocol.requestHandler = { req in
+            capturedBody = try? JSONSerialization.jsonObject(with: req.httpBody ?? Data()) as? [String: Any]
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, Data(Fixtures.issueJSON.utf8))
+        }
+        let client = makeTestClient()
+        let params = UpdateIssueParams(assigneeIds: [2])
+        _ = try await client.updateIssue(project: "mygroup/my-project", iid: 1, params: params)
+        XCTAssertEqual(capturedBody?["assignee_ids"] as? [Int], [2])
     }
 
     func testCloseIssue() async throws {

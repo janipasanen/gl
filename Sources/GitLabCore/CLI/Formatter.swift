@@ -4,6 +4,32 @@ import Foundation
 
 public struct Formatter: Sendable {
 
+    // MARK: Action result
+
+    /// Render the result of a write action that has no response body
+    /// (delete / remove). In text mode returns `message`; in JSON mode returns
+    /// a machine-readable status object describing what happened.
+    public static func actionResult(
+        _ message: String,
+        json: Bool,
+        action: String,
+        resource: String,
+        id: String
+    ) -> String {
+        guard json else { return message }
+        let payload: [String: String] = [
+            "status": "ok",
+            "action": action,
+            "resource": resource,
+            "id": id,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]),
+              let str = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return str
+    }
+
     // MARK: Table
 
     /// Render a simple ASCII table.
@@ -235,6 +261,7 @@ public struct Formatter: Sendable {
             ("ID",          "\(l.id)"),
             ("Name",        l.name),
             ("Color",       l.color),
+            ("Priority",    l.priority.map { "\($0)" } ?? ""),
             ("Description", l.description ?? ""),
         ])
     }
@@ -242,8 +269,8 @@ public struct Formatter: Sendable {
     public static func formatLabels(_ list: [GLLabel], json: Bool) -> String {
         if json { return list.prettyJSON() }
         return table(
-            headers: ["ID", "Name", "Color", "Open Issues"],
-            rows: list.map { l in ["\(l.id)", l.name, l.color, l.openIssuesCount.map { "\($0)" } ?? ""] }
+            headers: ["ID", "Name", "Color", "Priority", "Open Issues"],
+            rows: list.map { l in ["\(l.id)", l.name, l.color, l.priority.map { "\($0)" } ?? "", l.openIssuesCount.map { "\($0)" } ?? ""] }
         )
     }
 
@@ -368,6 +395,27 @@ public struct Formatter: Sendable {
         )
     }
 
+    public static func formatSnippet(_ s: GLSnippet, json: Bool) -> String {
+        if json { return s.prettyJSON() }
+        return detail([
+            ("ID",          "\(s.id)"),
+            ("Title",       s.title),
+            ("File",        s.fileName ?? ""),
+            ("Visibility",  s.visibility ?? ""),
+            ("Description", s.description ?? ""),
+            ("Author",      s.author?.username ?? ""),
+            ("URL",         s.webUrl ?? ""),
+        ])
+    }
+
+    public static func formatSnippets(_ list: [GLSnippet], json: Bool) -> String {
+        if json { return list.prettyJSON() }
+        return table(
+            headers: ["ID", "Title", "File", "Visibility"],
+            rows: list.map { s in ["\(s.id)", s.title, s.fileName ?? "", s.visibility ?? ""] }
+        )
+    }
+
     public static func formatWorkItem(_ w: GLWorkItem, json: Bool) -> String {
         if json { return w.prettyJSON() }
         return detail([
@@ -375,6 +423,11 @@ public struct Formatter: Sendable {
             ("Title", w.title),
             ("State", w.state ?? ""),
             ("Type",  w.workItemType?.name ?? ""),
+            ("Assignees", w.assignees?.map(\.username).joined(separator: ", ") ?? ""),
+            ("Milestone", w.milestone?.title ?? ""),
+            ("Due date", w.dueDate ?? ""),
+            ("Weight", w.weight.map { "\($0)" } ?? ""),
+            ("Notes", w.userNotesCount.map { "\($0)" } ?? ""),
             ("URL",   w.webUrl ?? ""),
         ])
     }
@@ -382,8 +435,8 @@ public struct Formatter: Sendable {
     public static func formatWorkItems(_ list: [GLWorkItem], json: Bool) -> String {
         if json { return list.prettyJSON() }
         return table(
-            headers: ["IID", "State", "Type", "Title"],
-            rows: list.map { w in ["\(w.iid)", w.state ?? "", w.workItemType?.name ?? "", w.title] }
+            headers: ["IID", "State", "Type", "Title", "Assignees"],
+            rows: list.map { w in ["\(w.iid)", w.state ?? "", w.workItemType?.name ?? "", w.title, w.assignees?.map(\.username).joined(separator: ", ") ?? ""] }
         )
     }
 }
