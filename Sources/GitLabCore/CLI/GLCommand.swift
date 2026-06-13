@@ -84,6 +84,10 @@ public struct GLCommand: Sendable {
         case "snippets":
             return try parseSnippets(args: args, json: json)
 
+        // ------------------------------------------------------------------ graphql
+        case "graphql", "gql":
+            return try parseGraphQL(args: args)
+
         default:
             throw CommandError.unknownCommand(resource)
         }
@@ -1060,6 +1064,38 @@ public struct GLCommand: Sendable {
         }
     }
 
+    private static func parseGraphQL(args: ParsedArgs) throws -> GLCommand {
+        // Query source: --query <q>, --file <path>, a positional, or stdin.
+        let query: String
+        if let q = args.option("query") {
+            query = q
+        } else if let path = args.option("file") {
+            query = try readFileContent(path)
+        } else if let positional = args.positional(1) {
+            query = positional
+        } else {
+            let data = FileHandle.standardInput.readDataToEndOfFile()
+            query = String(data: data, encoding: .utf8) ?? ""
+        }
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw CommandError.missingArgument("graphql (--query <q> | --file <path> | '<query>' | stdin) [--variables '<json>']")
+        }
+
+        // Validate --variables (if any) is a JSON object up front, then pass the
+        // raw string through (keeps the closure's captures Sendable).
+        let variablesJSON = args.option("variables")
+        if let vj = variablesJSON, !vj.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard let obj = try? JSONSerialization.jsonObject(with: Data(vj.utf8)), obj is [String: Any] else {
+                throw CommandError.invalidArgument("--variables", "must be a JSON object")
+            }
+        }
+
+        return GLCommand { client in
+            let data = try await client.graphQL(query: query, variablesJSON: variablesJSON)
+            return String(data: data, encoding: .utf8) ?? "{}"
+        }
+    }
+
     // MARK: - Helpers
 
     /// Map the colloquial `open` to GitLab's canonical `opened` for issue and
@@ -1291,6 +1327,11 @@ public struct GLCommand: Sendable {
                                 [--content <text> | --file <path>] [--description <d>]
                                 [--visibility private|internal|public]
       snippets delete <project> <id>
+
+      graphql  (--query <q> | --file <path> | '<query>' | stdin) [--variables '<json>']
+               Run a raw GraphQL query/mutation against /api/graphql and print the
+               data as JSON. Use for APIs not exposed over REST (e.g. work items on
+               gitlab.com). Alias: gql.
 
     ENVIRONMENT
       GITLAB_API_URL        GitLab host, e.g. https://gitlab.com

@@ -207,4 +207,88 @@ final class APIClientTests: XCTestCase {
             XCTAssertTrue(error.localizedDescription.contains("GITLAB_TOKEN_COMMAND"))
         }
     }
+
+    // MARK: - GraphQL transport (#9)
+
+    func testGraphQLPostsToGraphqlEndpoint() async throws {
+        var capturedURL: URL?
+        var capturedMethod: String?
+        var capturedBody: [String: Any]?
+        var capturedAuth: String?
+        MockURLProtocol.requestHandler = { req in
+            capturedURL = req.url
+            capturedMethod = req.httpMethod
+            capturedAuth = req.value(forHTTPHeaderField: "Authorization")
+            capturedBody = try? JSONSerialization.jsonObject(with: req.httpBody ?? Data()) as? [String: Any]
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, Data(#"{"data":{"x":1}}"#.utf8))
+        }
+        let client = makeTestClient()
+        let data = try await client.graphQL(query: "{ x }")
+        XCTAssertEqual(capturedURL?.absoluteString, "https://gitlab.example.com/api/graphql")
+        XCTAssertEqual(capturedMethod, "POST")
+        XCTAssertEqual(capturedAuth, "Bearer test-token")
+        XCTAssertEqual(capturedBody?["query"] as? String, "{ x }")
+        let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        XCTAssertEqual(obj?["x"] as? Int, 1)
+    }
+
+    func testGraphQLStripsApiV4FromEndpoint() async throws {
+        var capturedURL: URL?
+        MockURLProtocol.requestHandler = { req in
+            capturedURL = req.url
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, Data(#"{"data":{}}"#.utf8))
+        }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let client = GitLabAPIClient(
+            baseURL: URL(string: "https://gitlab.example.com/api/v4")!,
+            token: "t",
+            session: URLSession(configuration: config)
+        )
+        _ = try await client.graphQL(query: "{ x }")
+        XCTAssertEqual(capturedURL?.absoluteString, "https://gitlab.example.com/api/graphql")
+    }
+
+    func testGraphQLSendsVariables() async throws {
+        var capturedBody: [String: Any]?
+        MockURLProtocol.requestHandler = { req in
+            capturedBody = try? JSONSerialization.jsonObject(with: req.httpBody ?? Data()) as? [String: Any]
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, Data(#"{"data":{}}"#.utf8))
+        }
+        let client = makeTestClient()
+        _ = try await client.graphQL(query: "query($a:Int){ x(a:$a) }", variablesJSON: #"{"a":5}"#)
+        let vars = capturedBody?["variables"] as? [String: Any]
+        XCTAssertEqual(vars?["a"] as? Int, 5)
+    }
+
+    func testGraphQLSurfacesErrors() async {
+        MockURLProtocol.requestHandler = { req in
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, Data(#"{"errors":[{"message":"Field 'bogus' doesn't exist"}]}"#.utf8))
+        }
+        let client = makeTestClient()
+        do {
+            _ = try await client.graphQL(query: "{ bogus }")
+            XCTFail("expected a GraphQL error to be thrown")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("bogus"))
+        }
+    }
+
+    func testGraphQLRejectsNonObjectVariables() async {
+        MockURLProtocol.requestHandler = { req in
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, Data(#"{"data":{}}"#.utf8))
+        }
+        let client = makeTestClient()
+        do {
+            _ = try await client.graphQL(query: "{ x }", variablesJSON: "[1,2,3]")
+            XCTFail("expected variables validation to throw")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("JSON object"))
+        }
+    }
 }

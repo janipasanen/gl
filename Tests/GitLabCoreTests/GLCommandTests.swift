@@ -588,4 +588,35 @@ final class GLCommandTests: XCTestCase {
         XCTAssertTrue(out.contains("5 Minimal"))
         XCTAssertTrue(out.contains("groups milestones update <group> <id> [--title] [--state-event activate|close]"))
     }
+
+    // MARK: - graphql command (#9)
+
+    func testGraphqlCommandWithQueryFlag() async throws {
+        var capturedBody: [String: Any]?
+        MockURLProtocol.requestHandler = { req in
+            capturedBody = try? JSONSerialization.jsonObject(with: req.httpBody ?? Data()) as? [String: Any]
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, Data(#"{"data":{"project":{"name":"P"}}}"#.utf8))
+        }
+        let cmd = try GLCommand.parse(arguments: ["graphql", "--query", "{ project { name } }"])
+        let out = try await cmd.run(client: makeTestClient())
+        XCTAssertTrue(out.contains("\"project\""))
+        XCTAssertTrue(out.contains("\"name\""))
+        XCTAssertEqual(capturedBody?["query"] as? String, "{ project { name } }")
+    }
+
+    func testGraphqlCommandPositionalQuery() async throws {
+        stubRaw(json: #"{"data":{"ok":true}}"#)
+        let cmd = try GLCommand.parse(arguments: ["graphql", "{ ok }"])
+        let out = try await cmd.run(client: makeTestClient())
+        XCTAssertTrue(out.contains("ok"))
+    }
+
+    func testGraphqlCommandInvalidVariablesThrows() {
+        XCTAssertThrowsError(try GLCommand.parse(arguments: [
+            "graphql", "--query", "{ x }", "--variables", "not-json",
+        ])) { error in
+            XCTAssertTrue(error.localizedDescription.contains("--variables"))
+        }
+    }
 }

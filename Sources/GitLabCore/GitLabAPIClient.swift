@@ -12,6 +12,7 @@ public struct GitLabAPIClient: Sendable {
         case invalidResponse
         case apiError(Int, String)
         case tokenCommandFailed(String)
+        case graphQLError(String)
 
         public var errorDescription: String? {
             switch self {
@@ -25,6 +26,8 @@ public struct GitLabAPIClient: Sendable {
                 return "GitLab API error \(code): \(message)"
             case .tokenCommandFailed(let message):
                 return message
+            case .graphQLError(let message):
+                return "GraphQL error: \(message)"
             }
         }
     }
@@ -119,21 +122,7 @@ public struct GitLabAPIClient: Sendable {
         body: Data? = nil
     ) async throws -> (Data, HTTPURLResponse) {
         let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        // Use percentEncodedPath so encodePath's %2F isn't double-encoded by appending(path:)
-        var components = URLComponents()
-        components.scheme = baseURL.scheme
-        components.host = baseURL.host
-        components.port = baseURL.port
-        // Normalise the base path so both "https://host" and "https://host/api/v4"
-        // (with or without a trailing slash) resolve to the same endpoint.
-        var basePath = baseURL.path
-        while basePath.hasSuffix("/") { basePath.removeLast() }
-        if basePath.hasSuffix("/api/v4") { basePath.removeLast("/api/v4".count) }
-        components.percentEncodedPath = "\(basePath)/api/v4/\(trimmed)"
-        if !queryItems.isEmpty {
-            components.queryItems = queryItems
-        }
-        guard let url = components.url else {
+        guard let url = apiURL(apiPath: "/api/v4/\(trimmed)", queryItems: queryItems) else {
             throw ClientError.invalidURL(path)
         }
 
@@ -151,6 +140,73 @@ public struct GitLabAPIClient: Sendable {
             throw ClientError.invalidResponse
         }
         return (data, http)
+    }
+
+    /// Build an absolute API URL from `baseURL`, normalising a trailing
+    /// `/api/v4` and trailing slashes away so both `https://host` and
+    /// `https://host/api/v4` resolve correctly. `apiPath` is inserted verbatim
+    /// via `percentEncodedPath` (callers pre-encode path segments).
+    private func apiURL(apiPath: String, queryItems: [URLQueryItem] = []) -> URL? {
+        var components = URLComponents()
+        components.scheme = baseURL.scheme
+        components.host = baseURL.host
+        components.port = baseURL.port
+        var basePath = baseURL.path
+        while basePath.hasSuffix("/") { basePath.removeLast() }
+        if basePath.hasSuffix("/api/v4") { basePath.removeLast("/api/v4".count) }
+        components.percentEncodedPath = "\(basePath)\(apiPath)"
+        if !queryItems.isEmpty {
+            components.queryItems = queryItems
+        }
+        return components.url
+    }
+
+    // MARK: GraphQL
+
+    /// Execute a GraphQL query/mutation against `<base>/api/graphql` and return
+    /// the pretty-printed `data` object. `variablesJSON`, if provided, must be a
+    /// JSON object string. Top-level GraphQL `errors` are surfaced as a thrown
+    /// `ClientError.graphQLError`. (GraphQL lives at `/api/graphql`, not `/api/v4`.)
+    public func graphQL(query: String, variablesJSON: String? = nil) async throws -> Data {
+        guard let url = apiURL(apiPath: "/api/graphql") else {
+            throw ClientError.invalidURL("graphql")
+        }
+
+        var bodyObject: [String: Any] = ["query": query]
+        if let vj = variablesJSON, !vj.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard let variables = try? JSONSerialization.jsonObject(with: Data(vj.utf8)),
+                  variables is [String: Any] else {
+                throw ClientError.graphQLError("--variables must be a JSON object")
+            }
+            bodyObject["variables"] = variables
+        }
+        let bodyData = try JSONSerialization.data(withJSONObject: bodyObject)
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        // GitLab's GraphQL docs use `Authorization: Bearer`; PRIVATE-TOKEN also
+        // works for PATs. Send both for maximum compatibility across versions.
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue(token, forHTTPHeaderField: "PRIVATE-TOKEN")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.httpBody = bodyData
+
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw ClientError.invalidResponse
+        }
+        try checkResponse(http, data: data)
+
+        guard let envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw ClientError.invalidResponse
+        }
+        if let errors = envelope["errors"] as? [[String: Any]], !errors.isEmpty {
+            let messages = errors.compactMap { $0["message"] as? String }.joined(separator: "; ")
+            throw ClientError.graphQLError(messages.isEmpty ? "GraphQL request returned errors" : messages)
+        }
+        let dataField = envelope["data"] ?? NSNull()
+        return try JSONSerialization.data(withJSONObject: dataField, options: [.prettyPrinted, .sortedKeys])
     }
 
     // MARK: Typed helpers

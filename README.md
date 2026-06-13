@@ -339,6 +339,55 @@ gl snippets delete <project> <id>
 
 ---
 
+### GraphQL
+
+`gl graphql` (alias `gql`) runs a raw query or mutation against GitLab's GraphQL endpoint (`/api/graphql`) and prints the `data` object as JSON. Use it for parts of the API that aren't exposed over REST — most notably **work items on gitlab.com**, where the REST `/projects/:id/work_items` endpoints return 404.
+
+```bash
+# query from a flag, a file, a positional argument, or stdin
+gl graphql --query '{ currentUser { name username } }'
+gl graphql --file query.graphql --variables '{"fullPath":"mygroup/myproject"}'
+gl graphql '{ currentUser { name } }'
+echo '{ currentUser { name } }' | gl graphql
+```
+
+Work-items examples (GraphQL-only on gitlab.com):
+
+```bash
+# List work items
+gl graphql --query '
+  query($p: ID!) {
+    project(fullPath: $p) {
+      workItems(first: 20, sort: CREATED_DESC) {
+        nodes { id iid title state workItemType { name } webUrl }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }' --variables '{"p":"mygroup/myproject"}'
+
+# Get one work item by iid
+gl graphql --query '{ project(fullPath:"mygroup/myproject") { workItems(iid:"45") { nodes { id iid title state } } } }'
+
+# Find the work-item type IDs you can create
+gl graphql --query '{ project(fullPath:"mygroup/myproject") { workItemTypes { nodes { id name } } } }'
+
+# Create a work item
+gl graphql --query '
+  mutation($input: WorkItemCreateInput!) {
+    workItemCreate(input: $input) { workItem { id iid title } errors }
+  }' --variables '{"input":{"namespacePath":"mygroup/myproject","title":"New task","workItemTypeId":"gid://gitlab/WorkItems::Type/1"}}'
+
+# Close a work item (note: mutations take the global id, gid://gitlab/WorkItem/<id>)
+gl graphql --query '
+  mutation($input: WorkItemUpdateInput!) {
+    workItemUpdate(input: $input) { workItem { id state } errors }
+  }' --variables '{"input":{"id":"gid://gitlab/WorkItem/12345","stateEvent":"CLOSE"}}'
+```
+
+Authentication uses the same `GITLAB_TOKEN` / `GITLAB_TOKEN_COMMAND` as the rest of the tool (sent as `Authorization: Bearer`). GraphQL request errors are surfaced as `GraphQL error: …`.
+
+---
+
 ## Project layout
 
 ```

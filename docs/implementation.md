@@ -62,6 +62,17 @@ detail blocks; in JSON mode they print pretty-printed JSON. Read and
 create/update/close/reopen commands emit the affected object; delete/remove
 commands emit a status object (`{"status":"ok","action":"deleted",…}`).
 
+## GraphQL
+
+`GitLabAPIClient.graphQL(query:variablesJSON:)` POSTs to `<base>/api/graphql` (note:
+`/api/graphql`, **not** `/api/v4`), authenticating with `Authorization: Bearer`
+(plus `PRIVATE-TOKEN` for compatibility). It returns the pretty-printed `data`
+object and throws `ClientError.graphQLError` when the response carries top-level
+`errors`. The `gl graphql` command (alias `gql`) exposes this for raw
+queries/mutations sourced from `--query`, `--file`, a positional argument, or stdin,
+with optional `--variables` (a JSON object). This is the path for APIs not exposed
+over REST — e.g. work items on gitlab.com, whose REST endpoints return 404 there.
+
 ## Testing
 
 `swift test` runs the suite under `Tests/GitLabCoreTests/`, which uses a
