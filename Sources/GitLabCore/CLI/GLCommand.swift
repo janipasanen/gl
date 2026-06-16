@@ -909,6 +909,13 @@ public struct GLCommand: Sendable {
                 throw CommandError.missingArgument("workitems create <project> --title <t> (--type-id <gid> | --type <name>)")
             }
             let description = args.option("description") ?? args.option("desc")
+            let assigneeIdsOpt = args.option("assignee-ids")
+            let assigneeNamesOpt = args.option("assignee")
+            let labelsOpt = args.option("labels")
+            let milestoneId = args.option("milestone-id").flatMap(Int.init)
+            let weight = args.option("weight").flatMap(Int.init)
+            let dueDate = args.option("due-date")
+            let startDate = args.option("start-date")
             return GLCommand { client in
                 let typeId: String
                 if let tid = explicitTypeId {
@@ -916,7 +923,14 @@ public struct GLCommand: Sendable {
                 } else {
                     typeId = try await client.resolveWorkItemTypeId(project: project, name: typeName!)
                 }
-                let params = CreateWorkItemParams(title: title, workItemTypeId: typeId, description: description)
+                let assignees = try await workItemAssigneeGIDs(client: client, assigneeIds: assigneeIdsOpt, assignees: assigneeNamesOpt)
+                let labels = try await workItemLabelGIDs(client: client, project: project, names: labelsOpt)
+                let params = CreateWorkItemParams(
+                    title: title, workItemTypeId: typeId, description: description,
+                    assigneeGlobalIds: assignees, labelGlobalIds: labels,
+                    milestoneGlobalId: milestoneId.map { "gid://gitlab/Milestone/\($0)" },
+                    weight: weight, startDate: startDate, dueDate: dueDate
+                )
                 return try await Formatter.formatWorkItem(client.createWorkItem(project: project, params: params), json: json)
             }
         case "update":
@@ -925,8 +939,24 @@ public struct GLCommand: Sendable {
             let title = args.option("title")
             let description = args.option("description") ?? args.option("desc")
             let stateEvent = args.option("state-event")
+            let assigneeIdsOpt = args.option("assignee-ids")
+            let assigneeNamesOpt = args.option("assignee")
+            let addLabelsOpt = args.option("labels") ?? args.option("add-labels")
+            let removeLabelsOpt = args.option("remove-labels")
+            let milestoneId = args.option("milestone-id").flatMap(Int.init)
+            let weight = args.option("weight").flatMap(Int.init)
+            let dueDate = args.option("due-date")
+            let startDate = args.option("start-date")
             return GLCommand { client in
-                let params = UpdateWorkItemParams(title: title, description: description, stateEvent: stateEvent)
+                let assignees = try await workItemAssigneeGIDs(client: client, assigneeIds: assigneeIdsOpt, assignees: assigneeNamesOpt)
+                let addLabels = try await workItemLabelGIDs(client: client, project: project, names: addLabelsOpt)
+                let removeLabels = try await workItemLabelGIDs(client: client, project: project, names: removeLabelsOpt)
+                let params = UpdateWorkItemParams(
+                    title: title, description: description, stateEvent: stateEvent,
+                    assigneeGlobalIds: assignees, addLabelGlobalIds: addLabels, removeLabelGlobalIds: removeLabels,
+                    milestoneGlobalId: milestoneId.map { "gid://gitlab/Milestone/\($0)" },
+                    weight: weight, startDate: startDate, dueDate: dueDate
+                )
                 return try await Formatter.formatWorkItem(client.updateWorkItem(project: project, iid: iid, params: params), json: json)
             }
         case "close":
@@ -1174,6 +1204,35 @@ public struct GLCommand: Sendable {
         return Array(Set(ids)).sorted()
     }
 
+    /// Resolve assignee usernames/ids to User global IDs for work item widgets.
+    private static func workItemAssigneeGIDs(
+        client: GitLabAPIClient,
+        assigneeIds: String?,
+        assignees: String?
+    ) async throws -> [String]? {
+        let ids = try await resolveAssigneeIDs(client: client, assigneeIds: assigneeIds, assignees: assignees)
+        return ids?.map { "gid://gitlab/User/\($0)" }
+    }
+
+    /// Resolve project label names to Label global IDs for work item widgets.
+    private static func workItemLabelGIDs(
+        client: GitLabAPIClient,
+        project: String,
+        names: String?
+    ) async throws -> [String]? {
+        let labelNames = parseCSV(names)
+        guard !labelNames.isEmpty else { return nil }
+        let labels = try await client.listLabels(project: project, perPage: 100)
+        var gids: [String] = []
+        for name in labelNames {
+            guard let match = labels.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
+                throw CommandError.invalidArgument("--labels", "no label named '\(name)' in \(project)")
+            }
+            gids.append("gid://gitlab/ProjectLabel/\(match.id)")
+        }
+        return gids
+    }
+
     // MARK: - Help
 
     public static let helpText = """
@@ -1303,7 +1362,14 @@ public struct GLCommand: Sendable {
       workitems get    <project> <iid>
       workitems types  <project>                          List type IDs for create
       workitems create <project> --title <t> (--type-id <gid> | --type <name>) [--description <d>]
+                                 [--assignee <user>] [--assignee-ids <id1,id2>] [--labels <l1,l2>]
+                                 [--milestone-id <n>] [--weight <n>]
+                                 [--start-date <YYYY-MM-DD>] [--due-date <YYYY-MM-DD>]
       workitems update <project> <iid> [--title <t>] [--description <d>] [--state-event close|reopen]
+                                 [--assignee <user>] [--assignee-ids <id1,id2>]
+                                 [--labels <l1,l2>] [--remove-labels <l1,l2>]
+                                 [--milestone-id <n>] [--weight <n>]
+                                 [--start-date <YYYY-MM-DD>] [--due-date <YYYY-MM-DD>]
       workitems close  <project> <iid>
       workitems reopen <project> <iid>
       workitems delete <project> <iid>

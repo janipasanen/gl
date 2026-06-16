@@ -304,7 +304,11 @@ gl workitems get    <project> <iid>
 gl workitems types  <project>                 # list type IDs (needed for create)
 gl workitems create <project> --title "My task" --type Task
 gl workitems create <project> --title "My task" --type-id gid://gitlab/WorkItems::Type/1 --description "…"
-gl workitems update <project> <iid> --title "New title" --description "…"
+gl workitems create <project> --title "Task" --type Task \
+  --assignee jdoe --labels "bug,backend" --milestone-id 12 --weight 3 \
+  --start-date 2026-06-01 --due-date 2026-06-30
+gl workitems update <project> <iid> --title "New title" --description "…" \
+  --assignee jdoe --labels "regression" --remove-labels "backend" --weight 5
 gl workitems close  <project> <iid>
 gl workitems reopen <project> <iid>
 gl workitems delete <project> <iid>
@@ -312,7 +316,7 @@ gl workitems delete <project> <iid>
 
 - `--type <name>` (e.g. `Task`, `Issue`, `Incident`) is resolved to its global ID via `workitems types`; `--type-id <gid>` passes one explicitly.
 - Update/close/reopen/delete address the item by `iid`; the global ID required by the GraphQL mutations is resolved automatically.
-- Richer fields (assignees, milestone, weight, dates, labels) are GraphQL *widgets*; they aren't wired into these typed commands yet — use `gl graphql` for those (see below).
+- **Widget fields** map to GraphQL widgets, with names/IDs resolved for you: `--assignee <user>` / `--assignee-ids <id1,id2>` (assignees), `--labels` (and `--remove-labels` on update), `--milestone-id`, `--weight`, `--start-date`, `--due-date`. A widget the work item *type* doesn't support (e.g. `--weight` without a premium tier) comes back as a GraphQL error.
 
 ---
 

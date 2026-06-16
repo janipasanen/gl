@@ -427,6 +427,32 @@ final class GLCommandTests: XCTestCase {
         XCTAssertEqual(capturedInput?["workItemTypeId"] as? String, "gid://gitlab/WorkItems::Type/1")
     }
 
+    func testWorkitemsCreateResolvesAssigneeWeightAndLabel() async throws {
+        var input: [String: Any]?
+        MockURLProtocol.requestHandler = { req in
+            let path = req.url?.path ?? ""
+            let ok = { (d: Data) in (HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, d) }
+            if path.contains("/api/graphql") {
+                let obj = try? JSONSerialization.jsonObject(with: req.httpBody ?? Data()) as? [String: Any]
+                input = (obj?["variables"] as? [String: Any])?["input"] as? [String: Any]
+                return ok(Data(Fixtures.workItemCreateEnvelope.utf8))
+            }
+            if path.contains("/users") { return ok(Data("[\(Fixtures.memberJSON)]".utf8)) }
+            if path.contains("/labels") { return ok(Data(Fixtures.labelsArrayJSON.utf8)) }
+            XCTFail("unexpected path: \(path)")
+            return ok(Data())
+        }
+        let cmd = try GLCommand.parse(arguments: [
+            "workitems", "create", "p", "--title", "t", "--type-id", "gid://gitlab/WorkItems::Type/1",
+            "--assignee", "asmith", "--weight", "4", "--labels", "bug", "--milestone-id", "3",
+        ])
+        _ = try await cmd.run(client: makeTestClient())
+        XCTAssertEqual((input?["assigneesWidget"] as? [String: Any])?["assigneeIds"] as? [String], ["gid://gitlab/User/2"])
+        XCTAssertEqual((input?["weightWidget"] as? [String: Any])?["weight"] as? Int, 4)
+        XCTAssertEqual((input?["labelsWidget"] as? [String: Any])?["labelIds"] as? [String], ["gid://gitlab/ProjectLabel/7"])
+        XCTAssertEqual((input?["milestoneWidget"] as? [String: Any])?["milestoneId"] as? String, "gid://gitlab/Milestone/3")
+    }
+
     func testWorkitemsCreateMissingTypeThrows() {
         XCTAssertThrowsError(try GLCommand.parse(arguments: [
             "workitems", "create", "p", "--title", "x",

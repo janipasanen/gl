@@ -644,87 +644,66 @@ public struct GLWorkItemType: Codable, Sendable {
     public let name: String
 }
 
-public struct CreateWorkItemParams: Encodable, Sendable {
+// Work item params carry GraphQL-ready values (global IDs are pre-resolved by
+// the CLI). The API layer maps these onto GraphQL widget inputs.
+public struct CreateWorkItemParams: Sendable {
     public var title: String
     public var workItemTypeId: String?
     public var description: String?
-    public var assigneeIds: [Int]?
-    public var milestoneId: Int?
-    public var dueDate: String?
-    public var startDate: String?
+    public var assigneeGlobalIds: [String]?     // gid://gitlab/User/<id>
+    public var labelGlobalIds: [String]?         // gid://gitlab/ProjectLabel/<id>
+    public var milestoneGlobalId: String?        // gid://gitlab/Milestone/<id>
     public var weight: Int?
+    public var startDate: String?                // YYYY-MM-DD
+    public var dueDate: String?                  // YYYY-MM-DD
 
     public init(
         title: String,
         workItemTypeId: String? = nil,
         description: String? = nil,
-        assigneeIds: [Int]? = nil,
-        milestoneId: Int? = nil,
-        dueDate: String? = nil,
+        assigneeGlobalIds: [String]? = nil,
+        labelGlobalIds: [String]? = nil,
+        milestoneGlobalId: String? = nil,
+        weight: Int? = nil,
         startDate: String? = nil,
-        weight: Int? = nil
+        dueDate: String? = nil
     ) {
         self.title = title; self.workItemTypeId = workItemTypeId; self.description = description
-        self.assigneeIds = assigneeIds; self.milestoneId = milestoneId
-        self.dueDate = dueDate; self.startDate = startDate; self.weight = weight
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(title, forKey: .title)
-        try c.encodeIfPresent(workItemTypeId, forKey: .workItemTypeId)
-        try c.encodeIfPresent(description, forKey: .description)
-        try c.encodeIfPresent(assigneeIds, forKey: .assigneeIds)
-        try c.encodeIfPresent(milestoneId, forKey: .milestoneId)
-        try c.encodeIfPresent(dueDate, forKey: .dueDate)
-        try c.encodeIfPresent(startDate, forKey: .startDate)
-        try c.encodeIfPresent(weight, forKey: .weight)
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case title, workItemTypeId, description, assigneeIds, milestoneId, dueDate, startDate, weight
+        self.assigneeGlobalIds = assigneeGlobalIds; self.labelGlobalIds = labelGlobalIds
+        self.milestoneGlobalId = milestoneGlobalId; self.weight = weight
+        self.startDate = startDate; self.dueDate = dueDate
     }
 }
 
-public struct UpdateWorkItemParams: Encodable, Sendable {
+public struct UpdateWorkItemParams: Sendable {
     public var title: String?
     public var description: String?
     public var stateEvent: String?
-    public var assigneeIds: [Int]?
-    public var milestoneId: Int?
-    public var dueDate: String?
-    public var startDate: String?
+    public var assigneeGlobalIds: [String]?      // replaces the assignee set
+    public var addLabelGlobalIds: [String]?
+    public var removeLabelGlobalIds: [String]?
+    public var milestoneGlobalId: String?
     public var weight: Int?
+    public var startDate: String?
+    public var dueDate: String?
 
     public init(
         title: String? = nil,
         description: String? = nil,
         stateEvent: String? = nil,
-        assigneeIds: [Int]? = nil,
-        milestoneId: Int? = nil,
-        dueDate: String? = nil,
+        assigneeGlobalIds: [String]? = nil,
+        addLabelGlobalIds: [String]? = nil,
+        removeLabelGlobalIds: [String]? = nil,
+        milestoneGlobalId: String? = nil,
+        weight: Int? = nil,
         startDate: String? = nil,
-        weight: Int? = nil
+        dueDate: String? = nil
     ) {
         self.title = title; self.description = description; self.stateEvent = stateEvent
-        self.assigneeIds = assigneeIds; self.milestoneId = milestoneId
-        self.dueDate = dueDate; self.startDate = startDate; self.weight = weight
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encodeIfPresent(title, forKey: .title)
-        try c.encodeIfPresent(description, forKey: .description)
-        try c.encodeIfPresent(stateEvent, forKey: .stateEvent)
-        try c.encodeIfPresent(assigneeIds, forKey: .assigneeIds)
-        try c.encodeIfPresent(milestoneId, forKey: .milestoneId)
-        try c.encodeIfPresent(dueDate, forKey: .dueDate)
-        try c.encodeIfPresent(startDate, forKey: .startDate)
-        try c.encodeIfPresent(weight, forKey: .weight)
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case title, description, stateEvent, assigneeIds, milestoneId, dueDate, startDate, weight
+        self.assigneeGlobalIds = assigneeGlobalIds
+        self.addLabelGlobalIds = addLabelGlobalIds; self.removeLabelGlobalIds = removeLabelGlobalIds
+        self.milestoneGlobalId = milestoneGlobalId; self.weight = weight
+        self.startDate = startDate; self.dueDate = dueDate
     }
 }
 

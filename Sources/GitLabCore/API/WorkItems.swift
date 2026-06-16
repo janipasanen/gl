@@ -133,6 +133,21 @@ extension GitLabAPIClient {
         if let d = params.description, !d.isEmpty {
             input["descriptionWidget"] = ["description": d]
         }
+        if let a = params.assigneeGlobalIds {
+            input["assigneesWidget"] = ["assigneeIds": a]
+        }
+        if let l = params.labelGlobalIds, !l.isEmpty {
+            input["labelsWidget"] = ["labelIds": l]            // create variant
+        }
+        if let m = params.milestoneGlobalId {
+            input["milestoneWidget"] = ["milestoneId": m]
+        }
+        if let w = params.weight {
+            input["weightWidget"] = ["weight": w]
+        }
+        if let dates = Self.dateWidget(start: params.startDate, due: params.dueDate) {
+            input["startAndDueDateWidget"] = dates
+        }
         let query = """
         mutation($input: WorkItemCreateInput!) {
           workItemCreate(input: $input) { workItem { \(Self.workItemFields) } errors }
@@ -155,6 +170,16 @@ extension GitLabAPIClient {
         if let t = params.title { input["title"] = t }
         if let d = params.description { input["descriptionWidget"] = ["description": d] }
         if let se = params.stateEvent { input["stateEvent"] = Self.stateEventEnum(se) }
+        if let a = params.assigneeGlobalIds { input["assigneesWidget"] = ["assigneeIds": a] }
+        var labelsWidget: [String: Any] = [:]
+        if let add = params.addLabelGlobalIds, !add.isEmpty { labelsWidget["addLabelIds"] = add }
+        if let rem = params.removeLabelGlobalIds, !rem.isEmpty { labelsWidget["removeLabelIds"] = rem }
+        if !labelsWidget.isEmpty { input["labelsWidget"] = labelsWidget }   // update variant
+        if let m = params.milestoneGlobalId { input["milestoneWidget"] = ["milestoneId": m] }
+        if let w = params.weight { input["weightWidget"] = ["weight": w] }
+        if let dates = Self.dateWidget(start: params.startDate, due: params.dueDate) {
+            input["startAndDueDateWidget"] = dates
+        }
         let query = """
         mutation($input: WorkItemUpdateInput!) {
           workItemUpdate(input: $input) { workItem { \(Self.workItemFields) } errors }
@@ -201,6 +226,15 @@ extension GitLabAPIClient {
             throw ClientError.graphQLError("could not resolve global ID for work item \(iid)")
         }
         return gid
+    }
+
+    /// Build a startAndDueDateWidget input (fixed dates) when either is set.
+    private static func dateWidget(start: String?, due: String?) -> [String: Any]? {
+        guard start != nil || due != nil else { return nil }
+        var widget: [String: Any] = ["isFixed": true]
+        if let s = start { widget["startDate"] = s }
+        if let d = due { widget["dueDate"] = d }
+        return widget
     }
 
     /// Map the CLI's `close`/`reopen` to GitLab's WorkItemStateEvent enum.

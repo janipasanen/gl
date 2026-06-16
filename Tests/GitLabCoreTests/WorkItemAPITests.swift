@@ -156,6 +156,60 @@ final class WorkItemAPITests: XCTestCase {
         XCTAssertTrue(sawDeleteWithGid)
     }
 
+    func testCreateWorkItemWithWidgets() async throws {
+        var input: [String: Any]?
+        MockURLProtocol.requestHandler = { req in
+            let obj = try? JSONSerialization.jsonObject(with: req.httpBody ?? Data()) as? [String: Any]
+            input = (obj?["variables"] as? [String: Any])?["input"] as? [String: Any]
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, Data(Fixtures.workItemCreateEnvelope.utf8))
+        }
+        let client = makeTestClient()
+        let params = CreateWorkItemParams(
+            title: "t", workItemTypeId: "gid://gitlab/WorkItems::Type/1", description: "d",
+            assigneeGlobalIds: ["gid://gitlab/User/2"],
+            labelGlobalIds: ["gid://gitlab/ProjectLabel/10"],
+            milestoneGlobalId: "gid://gitlab/Milestone/3",
+            weight: 5, startDate: "2026-06-01", dueDate: "2026-06-30"
+        )
+        _ = try await client.createWorkItem(project: "g/p", params: params)
+        XCTAssertEqual((input?["assigneesWidget"] as? [String: Any])?["assigneeIds"] as? [String], ["gid://gitlab/User/2"])
+        XCTAssertEqual((input?["labelsWidget"] as? [String: Any])?["labelIds"] as? [String], ["gid://gitlab/ProjectLabel/10"])
+        XCTAssertEqual((input?["milestoneWidget"] as? [String: Any])?["milestoneId"] as? String, "gid://gitlab/Milestone/3")
+        XCTAssertEqual((input?["weightWidget"] as? [String: Any])?["weight"] as? Int, 5)
+        let dates = input?["startAndDueDateWidget"] as? [String: Any]
+        XCTAssertEqual(dates?["startDate"] as? String, "2026-06-01")
+        XCTAssertEqual(dates?["dueDate"] as? String, "2026-06-30")
+        XCTAssertEqual(dates?["isFixed"] as? Bool, true)
+        // labels on CREATE use the labelIds (add-only) variant, not addLabelIds
+        XCTAssertNil((input?["labelsWidget"] as? [String: Any])?["addLabelIds"])
+    }
+
+    func testUpdateWorkItemLabelsAddRemove() async throws {
+        var updateInput: [String: Any]?
+        MockURLProtocol.requestHandler = { req in
+            let obj = try? JSONSerialization.jsonObject(with: req.httpBody ?? Data()) as? [String: Any]
+            let query = obj?["query"] as? String ?? ""
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            if query.contains("workItemUpdate") {
+                updateInput = (obj?["variables"] as? [String: Any])?["input"] as? [String: Any]
+                return (r, Data(Fixtures.workItemUpdateEnvelope.utf8))
+            }
+            return (r, Data(Fixtures.workItemGetEnvelope.utf8))
+        }
+        let client = makeTestClient()
+        let params = UpdateWorkItemParams(
+            addLabelGlobalIds: ["gid://gitlab/ProjectLabel/10"],
+            removeLabelGlobalIds: ["gid://gitlab/ProjectLabel/11"]
+        )
+        _ = try await client.updateWorkItem(project: "p", iid: "1", params: params)
+        let labels = updateInput?["labelsWidget"] as? [String: Any]
+        XCTAssertEqual(labels?["addLabelIds"] as? [String], ["gid://gitlab/ProjectLabel/10"])
+        XCTAssertEqual(labels?["removeLabelIds"] as? [String], ["gid://gitlab/ProjectLabel/11"])
+        // update must NOT use the create-only labelIds field
+        XCTAssertNil(labels?["labelIds"])
+    }
+
     func testListGroupWorkItems() async throws {
         var capturedQuery = ""
         MockURLProtocol.requestHandler = { req in
