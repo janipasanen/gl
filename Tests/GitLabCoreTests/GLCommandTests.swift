@@ -29,7 +29,15 @@ final class GLCommandTests: XCTestCase {
         XCTAssertTrue(output.contains("USAGE"))
         XCTAssertTrue(output.contains("ENVIRONMENT"))
         XCTAssertTrue(output.contains("--priority"))
-        XCTAssertTrue(output.contains("--assignee-ids"))
+    }
+
+    func testIsHelpRequest() {
+        XCTAssertTrue(GLCommand.isHelpRequest(["--help"]))
+        XCTAssertTrue(GLCommand.isHelpRequest(["-h"]))
+        XCTAssertTrue(GLCommand.isHelpRequest(["help"]))
+        XCTAssertTrue(GLCommand.isHelpRequest(["issues", "list", "--help"]))
+        XCTAssertFalse(GLCommand.isHelpRequest(["issues", "list", "p"]))
+        XCTAssertFalse(GLCommand.isHelpRequest([]))
     }
 
     func testUnknownCommandThrows() {

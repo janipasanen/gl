@@ -6,10 +6,16 @@ public struct GLCommand: Sendable {
 
     // MARK: Parse entry point
 
+    /// True when the arguments request help (`help`, `--help`, or `-h`).
+    /// Used by both `parse` and the entry point so help works without a client.
+    public static func isHelpRequest(_ arguments: [String]) -> Bool {
+        arguments.contains("-h") || arguments.contains("--help") || arguments.contains("help")
+    }
+
     /// Parse raw CLI arguments into a runnable command.
     public static func parse(arguments: [String]) throws -> GLCommand {
         // Check for help before any other parsing so --help and -h always work
-        if arguments.contains("-h") || arguments.contains("--help") || arguments.contains("help") {
+        if isHelpRequest(arguments) {
             return GLCommand { _ in Self.helpText }
         }
 
