@@ -878,76 +878,69 @@ public struct GLCommand: Sendable {
         switch sub {
         case "list":
             let project = try require(args.positional(2), usage: "workitems list <project>")
-            let page = args.option("page").flatMap(Int.init) ?? 1
-            let perPage = args.option("per-page").flatMap(Int.init) ?? 20
+            let first = args.option("first").flatMap(Int.init) ?? args.option("per-page").flatMap(Int.init) ?? 20
+            let state = normalizeOpenState(args.option("state"))
             return GLCommand { client in
-                try await Formatter.formatWorkItems(client.listWorkItems(project: project, page: page, perPage: perPage), json: json)
+                try await Formatter.formatWorkItems(client.listWorkItems(project: project, first: first, state: state), json: json)
             }
         case "get":
             let project = try require(args.positional(2), usage: "workitems get <project> <iid>")
-            let iid = try requireInt(args.positional(3), name: "iid")
+            let iid = try require(args.positional(3), usage: "workitems get <project> <iid>")
             return GLCommand { client in
                 try await Formatter.formatWorkItem(client.getWorkItem(project: project, iid: iid), json: json)
             }
-        case "create":
-            let project = try require(args.positional(2), usage: "workitems create <project> --title <title>")
-            let title = try require(args.option("title"), usage: "workitems create ... --title <title>")
-            let typeId = args.option("type-id")
-            let description = args.option("description") ?? args.option("desc")
-            let milestoneId = args.option("milestone-id").flatMap(Int.init)
-            let dueDate = args.option("due-date")
-            let startDate = args.option("start-date")
-            let weight = args.option("weight").flatMap(Int.init)
-            let assigneeIdsOpt = args.option("assignee-ids")
-            let assigneeNamesOpt = args.option("assignee")
+        case "types":
+            let project = try require(args.positional(2), usage: "workitems types <project>")
             return GLCommand { client in
-                let assigneeIds = try await resolveAssigneeIDs(client: client, assigneeIds: assigneeIdsOpt, assignees: assigneeNamesOpt)
-                let params = CreateWorkItemParams(
-                    title: title, workItemTypeId: typeId, description: description,
-                    assigneeIds: assigneeIds, milestoneId: milestoneId, dueDate: dueDate,
-                    startDate: startDate, weight: weight
-                )
+                try await Formatter.formatWorkItemTypes(client.listWorkItemTypes(project: project), json: json)
+            }
+        case "create":
+            let project = try require(args.positional(2), usage: "workitems create <project> --title <t> (--type-id <gid> | --type <name>)")
+            let title = try require(args.option("title"), usage: "workitems create ... --title <title>")
+            let explicitTypeId = args.option("type-id")
+            let typeName = args.option("type")
+            guard explicitTypeId != nil || typeName != nil else {
+                throw CommandError.missingArgument("workitems create <project> --title <t> (--type-id <gid> | --type <name>)")
+            }
+            let description = args.option("description") ?? args.option("desc")
+            return GLCommand { client in
+                let typeId: String
+                if let tid = explicitTypeId {
+                    typeId = tid
+                } else {
+                    typeId = try await client.resolveWorkItemTypeId(project: project, name: typeName!)
+                }
+                let params = CreateWorkItemParams(title: title, workItemTypeId: typeId, description: description)
                 return try await Formatter.formatWorkItem(client.createWorkItem(project: project, params: params), json: json)
             }
         case "update":
             let project = try require(args.positional(2), usage: "workitems update <project> <iid>")
-            let iid = try requireInt(args.positional(3), name: "iid")
+            let iid = try require(args.positional(3), usage: "workitems update <project> <iid>")
             let title = args.option("title")
             let description = args.option("description") ?? args.option("desc")
             let stateEvent = args.option("state-event")
-            let milestoneId = args.option("milestone-id").flatMap(Int.init)
-            let dueDate = args.option("due-date")
-            let startDate = args.option("start-date")
-            let weight = args.option("weight").flatMap(Int.init)
-            let assigneeIdsOpt = args.option("assignee-ids")
-            let assigneeNamesOpt = args.option("assignee")
             return GLCommand { client in
-                let assigneeIds = try await resolveAssigneeIDs(client: client, assigneeIds: assigneeIdsOpt, assignees: assigneeNamesOpt)
-                let params = UpdateWorkItemParams(
-                    title: title, description: description, stateEvent: stateEvent,
-                    assigneeIds: assigneeIds, milestoneId: milestoneId, dueDate: dueDate,
-                    startDate: startDate, weight: weight
-                )
+                let params = UpdateWorkItemParams(title: title, description: description, stateEvent: stateEvent)
                 return try await Formatter.formatWorkItem(client.updateWorkItem(project: project, iid: iid, params: params), json: json)
             }
         case "close":
             let project = try require(args.positional(2), usage: "workitems close <project> <iid>")
-            let iid = try requireInt(args.positional(3), name: "iid")
+            let iid = try require(args.positional(3), usage: "workitems close <project> <iid>")
             return GLCommand { client in
                 try await Formatter.formatWorkItem(client.closeWorkItem(project: project, iid: iid), json: json)
             }
         case "reopen":
             let project = try require(args.positional(2), usage: "workitems reopen <project> <iid>")
-            let iid = try requireInt(args.positional(3), name: "iid")
+            let iid = try require(args.positional(3), usage: "workitems reopen <project> <iid>")
             return GLCommand { client in
                 try await Formatter.formatWorkItem(client.reopenWorkItem(project: project, iid: iid), json: json)
             }
         case "delete":
             let project = try require(args.positional(2), usage: "workitems delete <project> <iid>")
-            let iid = try requireInt(args.positional(3), name: "iid")
+            let iid = try require(args.positional(3), usage: "workitems delete <project> <iid>")
             return GLCommand { client in
                 try await client.deleteWorkItem(project: project, iid: iid)
-                return Formatter.actionResult("Work item \(iid) deleted.", json: json, action: "deleted", resource: "work_item", id: "\(iid)")
+                return Formatter.actionResult("Work item \(iid) deleted.", json: json, action: "deleted", resource: "work_item", id: iid)
             }
         default:
             throw CommandError.unknownCommand("workitems \(sub)")
@@ -1300,16 +1293,11 @@ public struct GLCommand: Sendable {
       releases update <project> <tag> --name <name> [--description <d>]
       releases delete <project> <tag>
 
-      workitems list   <project>
+      workitems list   <project> [--state opened|closed] [--first <n>]   (via GraphQL)
       workitems get    <project> <iid>
-      workitems create <project> --title <t> [--type-id <id>] [--description <d>]
-                                 [--assignee <username>] [--assignee-ids <id1,id2>]
-                                 [--milestone-id <n>] [--due-date <YYYY-MM-DD>]
-                                 [--start-date <YYYY-MM-DD>] [--weight <n>]
+      workitems types  <project>                          List type IDs for create
+      workitems create <project> --title <t> (--type-id <gid> | --type <name>) [--description <d>]
       workitems update <project> <iid> [--title <t>] [--description <d>] [--state-event close|reopen]
-                                 [--assignee <username>] [--assignee-ids <id1,id2>]
-                                 [--milestone-id <n>] [--due-date <YYYY-MM-DD>]
-                                 [--start-date <YYYY-MM-DD>] [--weight <n>]
       workitems close  <project> <iid>
       workitems reopen <project> <iid>
       workitems delete <project> <iid>

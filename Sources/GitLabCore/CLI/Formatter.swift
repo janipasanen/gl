@@ -435,8 +435,16 @@ public struct Formatter: Sendable {
     public static func formatWorkItems(_ list: [GLWorkItem], json: Bool) -> String {
         if json { return list.prettyJSON() }
         return table(
-            headers: ["IID", "State", "Type", "Title", "Assignees"],
-            rows: list.map { w in ["\(w.iid)", w.state ?? "", w.workItemType?.name ?? "", w.title, w.assignees?.map(\.username).joined(separator: ", ") ?? ""] }
+            headers: ["IID", "State", "Type", "Title"],
+            rows: list.map { w in ["\(w.iid)", w.state ?? "", w.workItemType?.name ?? "", w.title] }
+        )
+    }
+
+    public static func formatWorkItemTypes(_ list: [GLWorkItemType], json: Bool) -> String {
+        if json { return list.prettyJSON() }
+        return table(
+            headers: ["ID", "Name"],
+            rows: list.map { t in [t.id ?? "", t.name] }
         )
     }
 }

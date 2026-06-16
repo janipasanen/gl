@@ -209,6 +209,19 @@ public struct GitLabAPIClient: Sendable {
         return try JSONSerialization.data(withJSONObject: dataField, options: [.prettyPrinted, .sortedKeys])
     }
 
+    /// Convenience overload that serialises `variables` to JSON safely (avoids
+    /// string-interpolating untrusted values like project paths into the body).
+    func graphQL(query: String, variables: [String: Any]) async throws -> Data {
+        let vjson = String(data: try JSONSerialization.data(withJSONObject: variables), encoding: .utf8)
+        return try await graphQL(query: query, variablesJSON: vjson)
+    }
+
+    /// Decode a GraphQL `data` payload into a typed value using the shared decoder.
+    func graphQLDecode<T: Decodable>(query: String, variables: [String: Any]) async throws -> T {
+        let data = try await graphQL(query: query, variables: variables)
+        return try Self.decode(data)
+    }
+
     // MARK: Typed helpers
 
     func get<T: Decodable>(path: String, queryItems: [URLQueryItem] = []) async throws -> T {

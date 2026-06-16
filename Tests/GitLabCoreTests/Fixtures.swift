@@ -226,18 +226,42 @@ enum Fixtures {
     }
     """
 
+    // GraphQL WorkItem node (camelCase keys, global-ID `id`, string `iid`).
     static let workItemJSON = """
     {
-      "id": 1,
-      "iid": 1,
+      "id": "gid://gitlab/WorkItem/123",
+      "iid": "1",
       "title": "My work item",
-      "state": "OPEN",
-      "work_item_type": {"id": "gid://gitlab/WorkItems::Type/1", "name": "Issue"},
-      "created_at": "2024-05-01T08:00:00.000Z",
-      "updated_at": "2024-05-01T08:00:00.000Z",
-      "web_url": "https://gitlab.example.com/mygroup/my-project/-/work_items/1"
+      "state": "opened",
+      "workItemType": {"id": "gid://gitlab/WorkItems::Type/1", "name": "Issue"},
+      "webUrl": "https://gitlab.example.com/mygroup/my-project/-/work_items/1",
+      "createdAt": "2024-05-01T08:00:00Z",
+      "updatedAt": "2024-05-01T08:00:00Z"
     }
     """
+
+    // GraphQL response envelopes for work items (what /api/graphql returns).
+    static var workItemsListEnvelope: String {
+        #"{"data":{"project":{"workItems":{"nodes":[\#(workItemJSON)]}}}}"#
+    }
+    static var workItemGetEnvelope: String {
+        #"{"data":{"project":{"workItems":{"nodes":[\#(workItemJSON)]}}}}"#
+    }
+    static var workItemCreateEnvelope: String {
+        #"{"data":{"workItemCreate":{"workItem":\#(workItemJSON),"errors":[]}}}"#
+    }
+    static var workItemUpdateEnvelope: String {
+        #"{"data":{"workItemUpdate":{"workItem":\#(workItemJSON),"errors":[]}}}"#
+    }
+    static var workItemDeleteEnvelope: String {
+        #"{"data":{"workItemDelete":{"errors":[]}}}"#
+    }
+    static let workItemTypesEnvelope = #"""
+    {"data":{"project":{"workItemTypes":{"nodes":[
+      {"id":"gid://gitlab/WorkItems::Type/1","name":"Issue"},
+      {"id":"gid://gitlab/WorkItems::Type/5","name":"Task"}
+    ]}}}}
+    """#
 
     static let snippetJSON = """
     {

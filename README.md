@@ -293,14 +293,26 @@ gl releases delete <project> <tag>
 
 ---
 
-### Work Items (GitLab 15.7+)
+### Work Items
+
+Work items use GitLab's **GraphQL** API (the REST `/work_items` endpoints return 404 on gitlab.com), so these commands work on gitlab.com as well as self-managed instances.
 
 ```bash
-gl workitems list   <project>
+gl workitems list   <project>                 # newest first
+gl workitems list   <project> --state opened --first 50
 gl workitems get    <project> <iid>
-gl workitems create <project> --title "My task" --type-id <work-item-type-id> --assignee jdoe --weight 3
-gl workitems update <project> <iid> --title "My task" --assignee jdoe --milestone-id 10 --due-date 2024-12-31
+gl workitems types  <project>                 # list type IDs (needed for create)
+gl workitems create <project> --title "My task" --type Task
+gl workitems create <project> --title "My task" --type-id gid://gitlab/WorkItems::Type/1 --description "…"
+gl workitems update <project> <iid> --title "New title" --description "…"
+gl workitems close  <project> <iid>
+gl workitems reopen <project> <iid>
+gl workitems delete <project> <iid>
 ```
+
+- `--type <name>` (e.g. `Task`, `Issue`, `Incident`) is resolved to its global ID via `workitems types`; `--type-id <gid>` passes one explicitly.
+- Update/close/reopen/delete address the item by `iid`; the global ID required by the GraphQL mutations is resolved automatically.
+- Richer fields (assignees, milestone, weight, dates, labels) are GraphQL *widgets*; they aren't wired into these typed commands yet — use `gl graphql` for those (see below).
 
 ---
 

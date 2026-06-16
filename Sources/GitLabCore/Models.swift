@@ -619,8 +619,8 @@ public struct CreateTagParams: Encodable, Sendable {
 // MARK: - Work Item
 
 public struct GLWorkItem: Codable, Sendable {
-    public let id: Int?
-    public let iid: Int
+    public let id: String?       // GraphQL global ID, e.g. gid://gitlab/WorkItem/123
+    public let iid: String
     public let title: String
     public let state: String?
     public let description: String?

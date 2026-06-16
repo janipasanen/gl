@@ -387,42 +387,58 @@ final class GLCommandTests: XCTestCase {
     // MARK: - workitems
 
     func testWorkitemsListCommand() async throws {
-        stubRaw(json: Fixtures.workItemsArrayJSON)
+        stubRaw(json: Fixtures.workItemsListEnvelope)
         let cmd = try GLCommand.parse(arguments: ["workitems", "list", "p"])
         let output = try await cmd.run(client: makeTestClient())
         XCTAssertTrue(output.contains("My work item"))
     }
 
-    func testWorkitemsCreateCommand() async throws {
-        stubRaw(status: 201, json: Fixtures.workItemJSON)
-        let cmd = try GLCommand.parse(arguments: ["workitems", "create", "p", "--title", "My work item"])
+    func testWorkitemsTypesCommand() async throws {
+        stubRaw(json: Fixtures.workItemTypesEnvelope)
+        let cmd = try GLCommand.parse(arguments: ["workitems", "types", "p"])
         let output = try await cmd.run(client: makeTestClient())
-        XCTAssertTrue(output.contains("My work item"))
+        XCTAssertTrue(output.contains("Issue"))
+        XCTAssertTrue(output.contains("gid://gitlab/WorkItems::Type/5"))
     }
 
-    func testWorkitemsUpdateWithAssigneeCommand() async throws {
+    func testWorkitemsCreateCommand() async throws {
+        var capturedInput: [String: Any]?
         MockURLProtocol.requestHandler = { req in
-            if req.url?.path.contains("/users") == true {
-                let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-                return (r, Data("[\(Fixtures.memberJSON)]".utf8))
-            }
-            if req.url?.path.contains("/work_items/") == true {
-                let body = try? JSONSerialization.jsonObject(with: req.httpBody ?? Data()) as? [String: Any]
-                XCTAssertEqual(body?["assignee_ids"] as? [Int], [2])
-                XCTAssertEqual(body?["weight"] as? Int, 4)
-                let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-                return (r, Data(Fixtures.workItemJSON.utf8))
-            }
-            XCTFail("Unexpected request path: \(req.url?.path ?? "")")
-            let r = HTTPURLResponse(url: req.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!
-            return (r, Data())
+            let obj = try? JSONSerialization.jsonObject(with: req.httpBody ?? Data()) as? [String: Any]
+            capturedInput = (obj?["variables"] as? [String: Any])?["input"] as? [String: Any]
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (r, Data(Fixtures.workItemCreateEnvelope.utf8))
         }
         let cmd = try GLCommand.parse(arguments: [
-            "workitems", "update", "p", "1",
-            "--assignee", "asmith", "--weight", "4",
+            "workitems", "create", "p",
+            "--title", "My work item", "--type-id", "gid://gitlab/WorkItems::Type/1",
         ])
         let output = try await cmd.run(client: makeTestClient())
         XCTAssertTrue(output.contains("My work item"))
+        XCTAssertEqual(capturedInput?["title"] as? String, "My work item")
+        XCTAssertEqual(capturedInput?["workItemTypeId"] as? String, "gid://gitlab/WorkItems::Type/1")
+    }
+
+    func testWorkitemsCreateMissingTypeThrows() {
+        XCTAssertThrowsError(try GLCommand.parse(arguments: [
+            "workitems", "create", "p", "--title", "x",
+        ])) { error in
+            XCTAssertTrue(error.localizedDescription.contains("Missing argument"))
+        }
+    }
+
+    func testWorkitemsDeleteCommand() async throws {
+        MockURLProtocol.requestHandler = { req in
+            let query = (try? JSONSerialization.jsonObject(with: req.httpBody ?? Data()) as? [String: Any])?["query"] as? String ?? ""
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            if query.contains("workItemDelete") {
+                return (r, Data(Fixtures.workItemDeleteEnvelope.utf8))
+            }
+            return (r, Data(Fixtures.workItemGetEnvelope.utf8))
+        }
+        let cmd = try GLCommand.parse(arguments: ["workitems", "delete", "p", "1"])
+        let output = try await cmd.run(client: makeTestClient())
+        XCTAssertTrue(output.contains("deleted"))
     }
 
     // MARK: - JSON flag
