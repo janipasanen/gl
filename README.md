@@ -1,6 +1,6 @@
 # gl — GitLab CLI
 
-`gl` is a Swift command-line tool for GitLab. It covers the full REST API v4 surface for the resources that matter most in day-to-day project work: projects, issues, milestones, merge requests, labels, groups, members, branches, pipelines, releases, tags, work items, and snippets.
+`gl` is a Swift command-line tool for GitLab. It covers the full REST API v4 surface for the resources that matter most in day-to-day project work: projects, issues, milestones, merge requests, labels, groups, members, branches, pipelines, jobs, releases, tags, work items, and snippets.
 
 ---
 
@@ -281,6 +281,39 @@ gl pipelines delete <project> <id>
 
 ---
 
+### Jobs
+
+A pipeline only tells you *that* it failed. Jobs tell you **which** job failed, in
+which stage, and why.
+
+```bash
+gl jobs list      <project> --pipeline <pipeline-id>
+gl jobs list      <project> --pipeline <pipeline-id> --status failed
+gl jobs list      <project> --ref develop --per-page 50
+gl jobs get       <project> <job-id>
+gl jobs trace     <project> <job-id>              # readable log
+gl jobs trace     <project> <job-id> --tail 40    # last 40 lines
+gl jobs trace     <project> <job-id> --raw        # bytes exactly as GitLab sent them
+gl jobs retry     <project> <job-id>
+gl jobs cancel    <project> <job-id>
+gl jobs artifacts <project> <job-id> [--output <path>]
+```
+
+- `--pipeline <id>` switches to `GET /projects/:id/pipelines/:pipeline_id/jobs`;
+  without it the whole project's jobs are listed.
+- `--status` maps to GitLab's `scope[]` parameter (`status=` is ignored by the
+  API), and the fetched page is filtered again locally so the flag can never
+  silently degrade into "no filter". `--ref` is a local filter — neither jobs
+  endpoint accepts a ref. Both apply to the requested page, so raise
+  `--per-page` when filtering.
+- `jobs trace` strips ANSI colours, `section_start:`/`section_end:` fold markers
+  and per-line timestamps by default; `--raw` returns the log untouched.
+  `--tail` is applied after cleaning (and works with `--raw`).
+- `jobs artifacts` writes the zip to disk — never to stdout — and prints the
+  path and byte count. Default filename: `job-<job-id>-artifacts.zip`.
+
+---
+
 ### Releases
 
 ```bash
@@ -427,6 +460,7 @@ Sources/
       Members.swift
       Branches.swift
       Pipelines.swift
+      Jobs.swift
       Releases.swift
       Tags.swift
       WorkItems.swift
@@ -452,6 +486,7 @@ Tests/
     GroupAPITests.swift
     BranchAPITests.swift
     PipelineAPITests.swift
+    JobAPITests.swift
     ReleaseAPITests.swift
     WorkItemAPITests.swift
     SnippetAPITests.swift
@@ -491,6 +526,11 @@ gl mr merge mygroup/myproject 7 --squash --remove-source-branch
 
 # See recent pipelines
 gl pipelines list mygroup/myproject --ref main
+
+# A pipeline failed — find the job that broke it and read its log
+gl jobs list  mygroup/myproject --pipeline 2757878718
+gl jobs list  mygroup/myproject --pipeline 2757878718 --status failed
+gl jobs trace mygroup/myproject 15883666719 --tail 40
 
 # Create a release
 gl releases create mygroup/myproject \

@@ -546,6 +546,50 @@ public struct GLPipeline: Codable, Sendable, Identifiable {
     public let webUrl: String
 }
 
+// MARK: - Job
+
+/// A CI job inside a pipeline (`/projects/:id/jobs`).
+///
+/// Only the fields `gl` actually prints are modelled — GitLab sends a much
+/// larger object (runner, commit, tag_list, project_id, …) and unknown keys are
+/// simply ignored. Everything GitLab may omit or send as `null` (a job that has
+/// not started has no `duration`, `started_at`, `finished_at` or `user`) is
+/// optional, so a partial payload never breaks decoding. `id`, `name`, `stage`
+/// and `status` are the four fields the jobs API always returns and the ones
+/// the list view is built from.
+public struct GLJob: Codable, Sendable, Identifiable {
+    public let id: Int
+    public let name: String
+    public let stage: String
+    public let status: String
+    public let ref: String?
+    public let allowFailure: Bool?
+    public let duration: Double?
+    public let queuedDuration: Double?
+    public let failureReason: String?
+    public let createdAt: Date?
+    public let startedAt: Date?
+    public let finishedAt: Date?
+    public let webUrl: String?
+    public let user: GLUserRef?
+    public let pipeline: GLJobPipelineRef?
+    public let artifactsFile: GLJobArtifactsFile?
+}
+
+/// The `pipeline` object nested in a job payload (printable fields only).
+public struct GLJobPipelineRef: Codable, Sendable, Identifiable {
+    public let id: Int
+    public let ref: String?
+    public let sha: String?
+    public let status: String?
+}
+
+/// The `artifacts_file` object nested in a job payload.
+public struct GLJobArtifactsFile: Codable, Sendable {
+    public let filename: String?
+    public let size: Int?
+}
+
 // MARK: - Release
 
 public struct GLRelease: Codable, Sendable {

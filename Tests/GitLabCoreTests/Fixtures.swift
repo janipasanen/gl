@@ -214,6 +214,99 @@ enum Fixtures {
     }
     """
 
+    // A finished, failed job. Carries fields `gl` does not model (project_id,
+    // tag_list, runner, commit) to prove unknown keys are ignored.
+    static let jobFailedJSON = """
+    {
+      "id": 4001,
+      "name": "tests",
+      "stage": "test",
+      "status": "failed",
+      "ref": "develop",
+      "allow_failure": false,
+      "duration": 63.788263,
+      "queued_duration": 2.1,
+      "failure_reason": "script_failure",
+      "created_at": "2024-03-01T10:00:00.000Z",
+      "started_at": "2024-03-01T10:00:05.000Z",
+      "finished_at": "2024-03-01T10:01:08.000Z",
+      "web_url": "https://gitlab.example.com/mygroup/my-project/-/jobs/4001",
+      "project_id": 42,
+      "tag_list": ["docker"],
+      "runner": {"id": 9, "description": "shared-runner", "active": true},
+      "user": {"id": 1, "username": "jdoe", "name": "Jane Doe", "web_url": "https://gitlab.example.com/jdoe", "avatar_url": null},
+      "pipeline": {
+        "id": 300,
+        "project_id": 42,
+        "ref": "develop",
+        "sha": "abc123def456789",
+        "status": "failed",
+        "web_url": "https://gitlab.example.com/mygroup/my-project/-/pipelines/300"
+      },
+      "artifacts_file": {"filename": "artifacts.zip", "size": 1024},
+      "commit": {
+        "id": "abc123def456789",
+        "short_id": "abc123de",
+        "title": "Fix the thing",
+        "author_name": "Jane Doe",
+        "author_email": "jdoe@example.com",
+        "message": "Fix the thing"
+      }
+    }
+    """
+
+    // A job that has not finished: duration / finished_at / user / artifacts are
+    // null or missing, which must not break decoding.
+    static let jobRunningJSON = """
+    {
+      "id": 4002,
+      "name": "security",
+      "stage": "verify",
+      "status": "running",
+      "ref": "main",
+      "allow_failure": false,
+      "duration": null,
+      "queued_duration": null,
+      "failure_reason": null,
+      "created_at": "2024-03-01T10:00:00.000Z",
+      "started_at": "2024-03-01T10:00:07.000Z",
+      "finished_at": null,
+      "user": null,
+      "web_url": "https://gitlab.example.com/mygroup/my-project/-/jobs/4002",
+      "pipeline": {"id": 300, "ref": "main", "sha": "abc123def456789", "status": "running"}
+    }
+    """
+
+    /// A raw job log shaped exactly like the ones GitLab returns: ANSI colour
+    /// and erase escapes, `section_start` / `section_end` fold markers followed
+    /// by `\r`, per-line RFC3339 timestamps with the four-character stream
+    /// marker (`00O ` stdout, `01O `/`01E ` and the `00O+` continuation form),
+    /// a blank line, and a progress line redrawn with carriage returns.
+    static let jobTraceRawText: String = [
+        "2024-03-01T10:00:00.000000Z 00O \u{1B}[0KRunning with gitlab-runner 16.6.0\u{1B}[0;m",
+        "2024-03-01T10:00:01.000000Z 00O section_start:1709287200:prepare_executor\r\u{1B}[0K",
+        "2024-03-01T10:00:01.100000Z 00O+\u{1B}[0K\u{1B}[36;1mPreparing the \"docker\" executor\u{1B}[0;m\u{1B}[0;m",
+        "2024-03-01T10:00:05.123456Z 00O $ npm test",
+        "2024-03-01T10:00:06.000000Z 01O ",
+        "downloading 10%\rdownloading 55%\rdownloading 100%",
+        "2024-03-01T10:00:50.000000Z 01O \u{1B}[31mFAIL src/foo.test.ts\u{1B}[0m",
+        "2024-03-01T10:00:51.000000Z 00O section_end:1709287260:prepare_executor\r\u{1B}[0K",
+        "\u{1B}[31;1mERROR: Job failed: exit code 1\u{1B}[0;m",
+    ].joined(separator: "\n") + "\n"
+
+    /// What `Formatter.cleanJobTrace` must turn `jobTraceRawText` into: the
+    /// fold-marker lines gone, everything else readable and in order — blank
+    /// line included.
+    static let jobTraceCleanText: String = [
+        "Running with gitlab-runner 16.6.0",
+        "Preparing the \"docker\" executor",
+        "$ npm test",
+        "",
+        "downloading 100%",
+        "FAIL src/foo.test.ts",
+        "ERROR: Job failed: exit code 1",
+    ].joined(separator: "\n") + "\n"
+
     static let releaseJSON = """
     {
       "tag_name": "v1.0.0",
@@ -293,6 +386,7 @@ enum Fixtures {
     static var membersArrayJSON: String { "[\(memberJSON)]" }
     static var branchesArrayJSON: String { "[\(branchJSON)]" }
     static var pipelinesArrayJSON: String { "[\(pipelineJSON)]" }
+    static var jobsArrayJSON: String { "[\(jobFailedJSON),\(jobRunningJSON)]" }
     static var releasesArrayJSON: String { "[\(releaseJSON)]" }
     static var workItemsArrayJSON: String { "[\(workItemJSON)]" }
     static var snippetsArrayJSON: String { "[\(snippetJSON)]" }

@@ -26,6 +26,7 @@ public struct ParsedArgs: Sendable {
         "owned",
         "squash",
         "remove-source-branch",
+        "raw",
         "help",
     ]
 

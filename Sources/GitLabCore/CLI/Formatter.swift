@@ -357,6 +357,201 @@ public struct Formatter: Sendable {
         )
     }
 
+    public static func formatJob(_ j: GLJob, json: Bool) -> String {
+        if json { return j.prettyJSON() }
+        return detail([
+            ("ID",        "\(j.id)"),
+            ("Name",      j.name),
+            ("Stage",     j.stage),
+            ("Status",    j.status),
+            ("Failure",   j.failureReason ?? ""),
+            ("Allow failure", j.allowFailure == true ? "yes" : ""),
+            ("Ref",       j.ref ?? ""),
+            ("Pipeline",  j.pipeline.map { "\($0.id)" } ?? ""),
+            ("Duration",  humanDuration(j.duration)),
+            ("Queued",    humanDuration(j.queuedDuration)),
+            ("Started",   shortDateTime(j.startedAt)),
+            ("Finished",  shortDateTime(j.finishedAt)),
+            ("User",      j.user?.username ?? ""),
+            ("Artifacts", j.artifactsFile?.filename ?? ""),
+            ("URL",       j.webUrl ?? ""),
+        ])
+    }
+
+    public static func formatJobs(_ list: [GLJob], json: Bool) -> String {
+        if json { return list.prettyJSON() }
+        return table(
+            headers: ["ID", "Status", "Stage", "Name", "Duration", "Ref"],
+            rows: list.map { j in [
+                "\(j.id)",
+                j.status,
+                j.stage,
+                truncate(j.name, maxLength: 40),
+                humanDuration(j.duration),
+                j.ref ?? "",
+            ]}
+        )
+    }
+
+    /// Render a job log. Text mode prints the log as-is (already cleaned and/or
+    /// tailed by the caller); JSON mode wraps it so the newlines survive as a
+    /// single properly escaped string value.
+    public static func formatJobTrace(_ trace: String, jobId: Int, json: Bool) -> String {
+        guard json else { return trace }
+        let payload: [String: Any] = ["job_id": jobId, "trace": trace]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]),
+              let str = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return str
+    }
+
+    /// Report where a job's artifacts archive was written. The zip itself never
+    /// goes to stdout — only its path and size.
+    public static func formatJobArtifacts(jobId: Int, path: String, byteCount: Int, json: Bool) -> String {
+        guard json else {
+            return "Artifacts for job \(jobId) written to \(path) (\(byteCount) bytes)."
+        }
+        let payload: [String: Any] = [
+            "status": "ok",
+            "action": "downloaded",
+            "resource": "job-artifacts",
+            "id": "\(jobId)",
+            "path": path,
+            "bytes": byteCount,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]),
+              let str = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return str
+    }
+
+    // MARK: Job log cleaning
+
+    /// Make a raw GitLab job log readable.
+    ///
+    /// Real traces (tens of kilobytes) carry four kinds of noise that hide the
+    /// one line you are looking for:
+    /// - ANSI escape sequences (colour, `\u{1B}[0K` erase-to-end-of-line)
+    /// - `section_start:<ts>:<name>` / `section_end:<ts>:<name>` fold markers,
+    ///   emitted as a prefix followed by `\r` and then the human-readable text
+    /// - per-line RFC3339 timestamps followed by a four-character stream marker
+    ///   (`00O ` stdout, `01E ` stderr, `00O+` a continued line) that GitLab
+    ///   16.5+ prefixes to every line
+    /// - carriage returns used to redraw progress bars in place
+    ///
+    /// Lines are collapsed to what a terminal would finally show (the text
+    /// after the last `\r`). A line that held nothing but a fold marker is
+    /// dropped; every other line survives — including blank ones — so the log
+    /// keeps the shape the test runner gave it.
+    public static func cleanJobTrace(_ raw: String) -> String {
+        var out: [String] = []
+        for rawLine in raw.components(separatedBy: "\n") {
+            var line = rawLine
+            if line.hasSuffix("\r") { line.removeLast() }
+            let hadSectionMarker = line.contains("section_start:") || line.contains("section_end:")
+            line = stripANSI(line)
+            if let last = line.lastIndex(of: "\r") {
+                line = String(line[line.index(after: last)...])
+            }
+            line = stripSectionMarkers(line)
+            line = stripLogTimestamp(line)
+            if hadSectionMarker, line.trimmingCharacters(in: .whitespaces).isEmpty { continue }
+            out.append(line)
+        }
+        return out.joined(separator: "\n")
+    }
+
+    /// Keep only the last `count` lines. Applied *after* cleaning so `--tail n`
+    /// means "n lines of readable output", not "n lines of escape codes".
+    /// A trailing newline is preserved and does not count as a line.
+    public static func tailLines(_ text: String, count: Int) -> String {
+        guard count > 0 else { return "" }
+        var lines = text.components(separatedBy: "\n")
+        var trailingNewline = false
+        if lines.last == "" {
+            lines.removeLast()
+            trailingNewline = true
+        }
+        guard lines.count > count else { return text }
+        let kept = lines.suffix(count).joined(separator: "\n")
+        return trailingNewline ? kept + "\n" : kept
+    }
+
+    /// Human-readable duration from GitLab's seconds-as-Double.
+    public static func humanDuration(_ seconds: Double?) -> String {
+        guard let s = seconds, s.isFinite, s >= 0 else { return "" }
+        let total = Int(s.rounded())
+        if total < 60 { return "\(total)s" }
+        let minutes = total / 60
+        if minutes < 60 { return "\(minutes)m \(total % 60)s" }
+        return "\(minutes / 60)h \(minutes % 60)m"
+    }
+
+    /// Remove ANSI/VT100 escape sequences (CSI, OSC and two-character escapes).
+    static func stripANSI(_ s: String) -> String {
+        guard s.contains("\u{1B}") else { return s }
+        var result = ""
+        result.reserveCapacity(s.count)
+        var i = s.startIndex
+        while i < s.endIndex {
+            guard s[i] == "\u{1B}" else {
+                result.append(s[i])
+                i = s.index(after: i)
+                continue
+            }
+            var j = s.index(after: i)
+            guard j < s.endIndex else { break }
+            if s[j] == "[" {
+                // CSI: ESC [ <params> <final byte in @…~>
+                j = s.index(after: j)
+                while j < s.endIndex, !("@"..."~").contains(s[j]) { j = s.index(after: j) }
+                if j < s.endIndex { j = s.index(after: j) }
+            } else if s[j] == "]" {
+                // OSC: ESC ] … terminated by BEL or ESC
+                j = s.index(after: j)
+                while j < s.endIndex, s[j] != "\u{07}", s[j] != "\u{1B}" { j = s.index(after: j) }
+                if j < s.endIndex, s[j] == "\u{07}" { j = s.index(after: j) }
+            } else {
+                j = s.index(after: j)
+            }
+            i = j
+        }
+        return result
+    }
+
+    /// Drop `section_start:`/`section_end:` fold markers wherever they appear.
+    static func stripSectionMarkers(_ s: String) -> String {
+        guard s.contains("section_start:") || s.contains("section_end:") else { return s }
+        guard let regex = sectionMarkerRegex else { return s }
+        let range = NSRange(s.startIndex..., in: s)
+        return regex.stringByReplacingMatches(in: s, range: range, withTemplate: "")
+    }
+
+    /// Drop a leading RFC3339 timestamp (and GitLab's `00O`-style stream marker).
+    static func stripLogTimestamp(_ s: String) -> String {
+        guard let regex = logTimestampRegex else { return s }
+        let range = NSRange(s.startIndex..., in: s)
+        guard let match = regex.firstMatch(in: s, options: [.anchored], range: range),
+              let matched = Range(match.range, in: s) else { return s }
+        return String(s[matched.upperBound...])
+    }
+
+    // Compiled once; `nil` (impossible for these literal patterns) degrades to
+    // "leave the line alone" rather than trapping in a CLI.
+    // section_start:1709287200:step_script[collapsed=true]
+    private static let sectionMarkerRegex = try? NSRegularExpression(
+        pattern: "section_(?:start|end):\\d+:[A-Za-z0-9_.\\-]+(?:\\[[^\\]]*\\])?"
+    )
+
+    // 2024-03-01T10:00:05.123456Z 00O <line>   — the marker is two hex flag
+    // digits, the stream (O = stdout, E = stderr) and a space, or `+` when the
+    // line continues the previous one: `… 00O+<line>`.
+    private static let logTimestampRegex = try? NSRegularExpression(
+        pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:?\\d{2}) (?:[0-9A-Fa-f]{2}[A-Za-z][ +])?"
+    )
+
     public static func formatRelease(_ r: GLRelease, json: Bool) -> String {
         if json { return r.prettyJSON() }
         return detail([

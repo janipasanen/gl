@@ -5,7 +5,7 @@
 `gl` is a terminal application that talks to GitLab through the REST API v4 using
 environment-based authentication. It is simple to use from a shell but structured
 to act as a real operator tool for projects, issues, merge requests, milestones,
-notes, pipelines, branches, releases, tags, members, and work items.
+notes, pipelines, jobs, branches, releases, tags, members, and work items.
 
 ## Authentication
 
@@ -33,8 +33,11 @@ Swift executable package (`swift-tools-version: 6.0`, macOS 14+):
   `%2F`-encoded `namespace/project` paths are not double-encoded.
 - `Sources/GitLabCore/Models.swift` — all `Codable` models and parameter structs.
 - `Sources/GitLabCore/API/*.swift` — one file per resource (Issues, MergeRequests,
-  Milestones, Labels, Groups, Members, Branches, Pipelines, Releases, Tags,
-  WorkItems, …), each an extension on `GitLabAPIClient`.
+  Milestones, Labels, Groups, Members, Branches, Pipelines, Jobs, Releases, Tags,
+  WorkItems, …), each an extension on `GitLabAPIClient`. Most return decoded
+  models; `Jobs.swift` also has the two non-JSON endpoints — `jobTrace` (plain
+  text) and `jobArtifacts` (binary zip) — which use the raw `request(...)`
+  helper plus `checkResponse` instead of the `Decodable` `get`.
 - `Sources/GitLabCore/CLI/ArgumentParser.swift` — `ParsedArgs` (positionals,
   options, flags).
 - `Sources/GitLabCore/CLI/Formatter.swift` — table / detail / JSON output.

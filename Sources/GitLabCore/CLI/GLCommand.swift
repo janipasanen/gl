@@ -74,6 +74,10 @@ public struct GLCommand: Sendable {
         case "pipelines":
             return try parsePipelines(args: args, json: json)
 
+        // ------------------------------------------------------------------ jobs
+        case "jobs":
+            return try parseJobs(args: args, json: json)
+
         // ------------------------------------------------------------------ releases
         case "releases":
             return try parseReleases(args: args, json: json)
@@ -832,6 +836,65 @@ public struct GLCommand: Sendable {
         }
     }
 
+    private static func parseJobs(args: ParsedArgs, json: Bool) throws -> GLCommand {
+        let sub = args.positional(1) ?? "list"
+        switch sub {
+        case "list":
+            let project = try require(args.positional(2), usage: "jobs list <project> [--pipeline <id>]")
+            let pipelineId = try args.option("pipeline").map { try requireInt($0, name: "--pipeline") }
+            let ref = args.option("ref")
+            let status = args.option("status")
+            let page = args.option("page").flatMap(Int.init) ?? 1
+            let perPage = args.option("per-page").flatMap(Int.init) ?? 20
+            return GLCommand { client in
+                try await Formatter.formatJobs(
+                    client.listJobs(project: project, pipelineId: pipelineId, ref: ref, status: status, page: page, perPage: perPage),
+                    json: json
+                )
+            }
+        case "get":
+            let project = try require(args.positional(2), usage: "jobs get <project> <job-id>")
+            let id = try requireInt(args.positional(3), name: "job-id")
+            return GLCommand { client in
+                try await Formatter.formatJob(client.getJob(project: project, jobId: id), json: json)
+            }
+        case "trace", "log", "logs":
+            let project = try require(args.positional(2), usage: "jobs trace <project> <job-id>")
+            let id = try requireInt(args.positional(3), name: "job-id")
+            let raw = args.flag("raw")
+            let tail = try args.option("tail").map { try requireInt($0, name: "--tail") }
+            return GLCommand { client in
+                let trace = try await client.jobTrace(project: project, jobId: id)
+                var text = raw ? trace : Formatter.cleanJobTrace(trace)
+                if let tail { text = Formatter.tailLines(text, count: tail) }
+                return Formatter.formatJobTrace(text, jobId: id, json: json)
+            }
+        case "retry":
+            let project = try require(args.positional(2), usage: "jobs retry <project> <job-id>")
+            let id = try requireInt(args.positional(3), name: "job-id")
+            return GLCommand { client in
+                try await Formatter.formatJob(client.retryJob(project: project, jobId: id), json: json)
+            }
+        case "cancel":
+            let project = try require(args.positional(2), usage: "jobs cancel <project> <job-id>")
+            let id = try requireInt(args.positional(3), name: "job-id")
+            return GLCommand { client in
+                try await Formatter.formatJob(client.cancelJob(project: project, jobId: id), json: json)
+            }
+        case "artifacts":
+            let project = try require(args.positional(2), usage: "jobs artifacts <project> <job-id> [--output <path>]")
+            let id = try requireInt(args.positional(3), name: "job-id")
+            let output = args.option("output")
+            return GLCommand { client in
+                let data = try await client.jobArtifacts(project: project, jobId: id)
+                let path = try writeArtifacts(data, jobId: id, output: output)
+                return Formatter.formatJobArtifacts(jobId: id, path: path, byteCount: data.count, json: json)
+            }
+        default:
+            throw CommandError.unknownCommand("jobs \(sub)")
+        }
+    }
+
     private static func parseReleases(args: ParsedArgs, json: Bool) throws -> GLCommand {
         let sub = args.positional(1) ?? "list"
         switch sub {
@@ -1144,6 +1207,33 @@ public struct GLCommand: Sendable {
         }
     }
 
+    /// Write a job's artifacts archive to disk and return the path it landed on.
+    ///
+    /// Artifacts are a binary zip, so the bytes go straight from `Data` to the
+    /// file — they are never turned into a `String` (that would corrupt them)
+    /// and never printed. `--output` may name a file or an existing directory;
+    /// without it the archive lands in the working directory as
+    /// `job-<id>-artifacts.zip`.
+    private static func writeArtifacts(_ data: Data, jobId: Int, output: String?) throws -> String {
+        let defaultName = "job-\(jobId)-artifacts.zip"
+        var target = output.map { ($0 as NSString).expandingTildeInPath } ?? defaultName
+        if target.isEmpty { target = defaultName }
+
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: target, isDirectory: &isDirectory), isDirectory.boolValue {
+            target = (target as NSString).appendingPathComponent(defaultName)
+        }
+
+        let url = URL(fileURLWithPath: target)
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            throw CommandError.invalidArgument(
+                "--output", "could not write artifacts to \(target): \(error.localizedDescription)")
+        }
+        return url.standardizedFileURL.path
+    }
+
     private static func require(_ value: String?, usage: String) throws -> String {
         guard let v = value, !v.isEmpty else {
             throw CommandError.missingArgument(usage)
@@ -1351,6 +1441,22 @@ public struct GLCommand: Sendable {
       pipelines cancel <project> <id>
       pipelines retry  <project> <id>
       pipelines delete <project> <id>
+
+      jobs list      <project> [--pipeline <id>] [--ref <branch>]
+                               [--status failed|success|running|canceled|manual|...]
+                               [--page <n>] [--per-page <n>]
+                               Which job failed, and in which stage. --status maps to
+                               GitLab's `scope[]`; --status/--ref filter the fetched page.
+      jobs get       <project> <job-id>
+      jobs trace     <project> <job-id> [--tail <n>] [--raw]
+                               Print the job log. ANSI colours, section markers and
+                               per-line timestamps are stripped unless --raw is given;
+                               --tail keeps only the last <n> lines.
+      jobs retry     <project> <job-id>
+      jobs cancel    <project> <job-id>
+      jobs artifacts <project> <job-id> [--output <path>]
+                               Download the artifacts zip (written to disk, never stdout;
+                               default job-<job-id>-artifacts.zip)
 
       releases list   <project>
       releases get    <project> <tag>
