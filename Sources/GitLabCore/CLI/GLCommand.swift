@@ -145,6 +145,35 @@ public struct GLCommand: Sendable {
                     json: json
                 )
             }
+        case "create":
+            let name = try require(
+                args.option("name") ?? args.positional(2),
+                usage: "projects create <name> [--group <path>] [--path <slug>] "
+                     + "[--description <d>] [--visibility private|internal|public] "
+                     + "[--default-branch <branch>] [--initialize-with-readme]"
+            )
+            let group = args.option("group") ?? args.option("namespace")
+            let path = args.option("path")
+            let description = args.option("description")
+            let visibility = args.option("visibility") ?? "private"
+            let defaultBranch = args.option("default-branch")
+            let readme = args.flag("initialize-with-readme")
+            return GLCommand { client in
+                try await Formatter.formatProject(
+                    client.createProject(
+                        name: name, inGroup: group, path: path,
+                        description: description, visibility: visibility,
+                        defaultBranch: defaultBranch, initializeWithReadme: readme
+                    ),
+                    json: json
+                )
+            }
+        case "delete":
+            let path = try require(args.positional(2), usage: "projects delete <path>")
+            return GLCommand { client in
+                try await client.deleteProject(path: path)
+                return "Deleted project \(path)"
+            }
         default:
             throw CommandError.unknownCommand("projects \(sub)")
         }
@@ -1347,6 +1376,10 @@ public struct GLCommand: Sendable {
       projects list   [--search <q>] [--membership] [--owned]
       projects get    <path>
       projects search <query>
+      projects create <name> [--group <path>] [--path <slug>] [--description <d>]
+                             [--visibility private|internal|public]
+                             [--default-branch <branch>] [--initialize-with-readme]
+      projects delete <path>
 
       issues list     <project> [--state opened|closed|all] [--milestone <title>]
                                 [--labels <l1,l2>] [--assignee <username>] [--assignee-id <id>]

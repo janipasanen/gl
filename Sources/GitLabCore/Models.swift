@@ -99,6 +99,52 @@ public struct GLTimeStats: Codable, Sendable {
 
 // MARK: - Issue params
 
+/// Body for `POST /projects`.
+///
+/// `namespaceId` is the group's numeric id — the endpoint does not accept a
+/// group path here, which is the usual reason a hand-rolled call lands the
+/// project in the caller's personal namespace instead of the intended group.
+public struct CreateProjectParams: Encodable, Sendable {
+    public var name: String
+    public var path: String?
+    public var namespaceId: Int?
+    public var description: String?
+    public var visibility: String
+    public var defaultBranch: String?
+    public var initializeWithReadme: Bool
+
+    public init(
+        name: String, path: String? = nil, namespaceId: Int? = nil,
+        description: String? = nil, visibility: String = "private",
+        defaultBranch: String? = nil, initializeWithReadme: Bool = false
+    ) {
+        self.name = name; self.path = path; self.namespaceId = namespaceId
+        self.description = description; self.visibility = visibility
+        self.defaultBranch = defaultBranch
+        self.initializeWithReadme = initializeWithReadme
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(name, forKey: .name)
+        try c.encodeIfPresent(path, forKey: .path)
+        try c.encodeIfPresent(namespaceId, forKey: .namespaceId)
+        try c.encodeIfPresent(description, forKey: .description)
+        try c.encode(visibility, forKey: .visibility)
+        // GitLab rejects default_branch unless the repo has a commit, so it is
+        // only meaningful together with initialize_with_readme.
+        if initializeWithReadme {
+            try c.encode(true, forKey: .initializeWithReadme)
+            try c.encodeIfPresent(defaultBranch, forKey: .defaultBranch)
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name, path, namespaceId, description, visibility
+        case defaultBranch, initializeWithReadme
+    }
+}
+
 public struct CreateIssueParams: Encodable, Sendable {
     public var title: String
     public var description: String?
