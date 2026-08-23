@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Shared references
 
-public struct GLUserRef: Codable, Sendable, Identifiable {
+public struct GLUserRef: Codable {
     public let id: Int
     public let username: String
     public let name: String
@@ -10,14 +10,14 @@ public struct GLUserRef: Codable, Sendable, Identifiable {
     public let avatarUrl: String?
 }
 
-public struct GLMilestoneRef: Codable, Sendable, Identifiable {
+public struct GLMilestoneRef: Codable {
     public let id: Int
     public let iid: Int
     public let title: String
     public let state: String
 }
 
-public struct GLCommit: Codable, Sendable {
+public struct GLCommit: Codable {
     public let id: String
     public let shortId: String
     public let title: String
@@ -33,7 +33,7 @@ public struct GLCommit: Codable, Sendable {
 
 // MARK: - User
 
-public struct GLUser: Codable, Sendable, Identifiable {
+public struct GLUser: Codable {
     public let id: Int
     public let username: String
     public let name: String
@@ -49,7 +49,7 @@ public struct GLUser: Codable, Sendable, Identifiable {
 
 // MARK: - Project
 
-public struct GLProject: Codable, Sendable, Identifiable {
+public struct GLProject: Codable {
     public let id: Int
     public let name: String
     public let nameWithNamespace: String
@@ -67,7 +67,7 @@ public struct GLProject: Codable, Sendable, Identifiable {
 
 // MARK: - Issue
 
-public struct GLIssue: Codable, Sendable, Identifiable {
+public struct GLIssue: Codable {
     public let id: Int
     public let iid: Int
     public let projectId: Int
@@ -90,7 +90,7 @@ public struct GLIssue: Codable, Sendable, Identifiable {
     public let timeStats: GLTimeStats?
 }
 
-public struct GLTimeStats: Codable, Sendable {
+public struct GLTimeStats: Codable {
     public let timeEstimate: Int
     public let totalTimeSpent: Int
     public let humanTimeEstimate: String?
@@ -104,7 +104,7 @@ public struct GLTimeStats: Codable, Sendable {
 /// `namespaceId` is the group's numeric id — the endpoint does not accept a
 /// group path here, which is the usual reason a hand-rolled call lands the
 /// project in the caller's personal namespace instead of the intended group.
-public struct CreateProjectParams: Encodable, Sendable {
+public struct CreateProjectParams: Encodable {
     public var name: String
     public var path: String?
     public var namespaceId: Int?
@@ -124,7 +124,7 @@ public struct CreateProjectParams: Encodable, Sendable {
         self.initializeWithReadme = initializeWithReadme
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(name, forKey: .name)
         try c.encodeIfPresent(path, forKey: .path)
@@ -145,7 +145,7 @@ public struct CreateProjectParams: Encodable, Sendable {
     }
 }
 
-public struct CreateIssueParams: Encodable, Sendable {
+public struct CreateIssueParams: Encodable {
     public var title: String
     public var description: String?
     public var milestoneId: Int?
@@ -166,7 +166,7 @@ public struct CreateIssueParams: Encodable, Sendable {
         self.weight = weight
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(title, forKey: .title)
         try c.encodeIfPresent(description, forKey: .description)
@@ -182,7 +182,7 @@ public struct CreateIssueParams: Encodable, Sendable {
     }
 }
 
-public struct UpdateIssueParams: Encodable, Sendable {
+public struct UpdateIssueParams: Encodable {
     public var title: String?
     public var description: String?
     public var milestoneId: Int?
@@ -208,7 +208,7 @@ public struct UpdateIssueParams: Encodable, Sendable {
         self.dueDate = dueDate; self.weight = weight
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encodeIfPresent(title, forKey: .title)
         try c.encodeIfPresent(description, forKey: .description)
@@ -230,7 +230,7 @@ public struct UpdateIssueParams: Encodable, Sendable {
 
 // MARK: - Note
 
-public struct GLNote: Codable, Sendable, Identifiable {
+public struct GLNote: Codable {
     public let id: Int
     public let body: String
     public let author: GLUserRef
@@ -241,19 +241,19 @@ public struct GLNote: Codable, Sendable, Identifiable {
     public let resolved: Bool?
 }
 
-public struct CreateNoteParams: Encodable, Sendable {
+public struct CreateNoteParams: Encodable {
     public let body: String
     public init(body: String) { self.body = body }
 }
 
-public struct UpdateNoteParams: Encodable, Sendable {
+public struct UpdateNoteParams: Encodable {
     public let body: String
     public init(body: String) { self.body = body }
 }
 
 // MARK: - Milestone
 
-public struct GLMilestone: Codable, Sendable, Identifiable {
+public struct GLMilestone: Codable {
     public let id: Int
     public let iid: Int
     public let projectId: Int?
@@ -269,7 +269,7 @@ public struct GLMilestone: Codable, Sendable, Identifiable {
     public let expired: Bool?
 }
 
-public struct CreateMilestoneParams: Encodable, Sendable {
+public struct CreateMilestoneParams: Encodable {
     public var title: String
     public var description: String?
     public var dueDate: String?
@@ -280,7 +280,7 @@ public struct CreateMilestoneParams: Encodable, Sendable {
         self.dueDate = dueDate; self.startDate = startDate
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(title, forKey: .title)
         try c.encodeIfPresent(description, forKey: .description)
@@ -293,7 +293,7 @@ public struct CreateMilestoneParams: Encodable, Sendable {
     }
 }
 
-public struct UpdateMilestoneParams: Encodable, Sendable {
+public struct UpdateMilestoneParams: Encodable {
     public var title: String?
     public var description: String?
     public var dueDate: String?
@@ -310,7 +310,7 @@ public struct UpdateMilestoneParams: Encodable, Sendable {
         self.stateEvent = stateEvent
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encodeIfPresent(title, forKey: .title)
         try c.encodeIfPresent(description, forKey: .description)
@@ -326,7 +326,7 @@ public struct UpdateMilestoneParams: Encodable, Sendable {
 
 // MARK: - Merge Request
 
-public struct GLMergeRequest: Codable, Sendable, Identifiable {
+public struct GLMergeRequest: Codable {
     public let id: Int
     public let iid: Int
     public let projectId: Int
@@ -350,7 +350,7 @@ public struct GLMergeRequest: Codable, Sendable, Identifiable {
     public let draft: Bool?
 }
 
-public struct CreateMRParams: Encodable, Sendable {
+public struct CreateMRParams: Encodable {
     public var sourceBranch: String
     public var targetBranch: String
     public var title: String
@@ -372,7 +372,7 @@ public struct CreateMRParams: Encodable, Sendable {
         self.assigneeIds = assigneeIds; self.removeSourceBranch = removeSourceBranch
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(sourceBranch, forKey: .sourceBranch)
         try c.encode(targetBranch, forKey: .targetBranch)
@@ -389,7 +389,7 @@ public struct CreateMRParams: Encodable, Sendable {
     }
 }
 
-public struct UpdateMRParams: Encodable, Sendable {
+public struct UpdateMRParams: Encodable {
     public var title: String?
     public var description: String?
     public var targetBranch: String?
@@ -410,7 +410,7 @@ public struct UpdateMRParams: Encodable, Sendable {
         self.assigneeIds = assigneeIds
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encodeIfPresent(title, forKey: .title)
         try c.encodeIfPresent(description, forKey: .description)
@@ -426,7 +426,7 @@ public struct UpdateMRParams: Encodable, Sendable {
     }
 }
 
-public struct MergeMRParams: Encodable, Sendable {
+public struct MergeMRParams: Encodable {
     public var mergeCommitMessage: String?
     public var squash: Bool?
     public var shouldRemoveSourceBranch: Bool?
@@ -437,7 +437,7 @@ public struct MergeMRParams: Encodable, Sendable {
         self.shouldRemoveSourceBranch = shouldRemoveSourceBranch
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encodeIfPresent(mergeCommitMessage, forKey: .mergeCommitMessage)
         try c.encodeIfPresent(squash, forKey: .squash)
@@ -451,7 +451,7 @@ public struct MergeMRParams: Encodable, Sendable {
 
 // MARK: - Label
 
-public struct GLLabel: Codable, Sendable, Identifiable {
+public struct GLLabel: Codable {
     public let id: Int
     public let name: String
     public let color: String
@@ -464,7 +464,7 @@ public struct GLLabel: Codable, Sendable, Identifiable {
     public let isProjectLabel: Bool?
 }
 
-public struct CreateLabelParams: Encodable, Sendable {
+public struct CreateLabelParams: Encodable {
     public var name: String
     public var color: String
     public var description: String?
@@ -475,7 +475,7 @@ public struct CreateLabelParams: Encodable, Sendable {
         self.description = description; self.priority = priority
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(name, forKey: .name)
         try c.encode(color, forKey: .color)
@@ -486,7 +486,7 @@ public struct CreateLabelParams: Encodable, Sendable {
     enum CodingKeys: String, CodingKey { case name, color, description, priority }
 }
 
-public struct UpdateLabelParams: Encodable, Sendable {
+public struct UpdateLabelParams: Encodable {
     public var newName: String?
     public var color: String?
     public var description: String?
@@ -497,7 +497,7 @@ public struct UpdateLabelParams: Encodable, Sendable {
         self.description = description; self.priority = priority
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encodeIfPresent(newName, forKey: .newName)
         try c.encodeIfPresent(color, forKey: .color)
@@ -510,7 +510,7 @@ public struct UpdateLabelParams: Encodable, Sendable {
 
 // MARK: - Group
 
-public struct GLGroup: Codable, Sendable, Identifiable {
+public struct GLGroup: Codable {
     public let id: Int
     public let name: String
     public let path: String
@@ -524,7 +524,7 @@ public struct GLGroup: Codable, Sendable, Identifiable {
 
 // MARK: - Member
 
-public struct GLMember: Codable, Sendable, Identifiable {
+public struct GLMember: Codable {
     public let id: Int
     public let username: String
     public let name: String
@@ -535,7 +535,7 @@ public struct GLMember: Codable, Sendable, Identifiable {
     public let expiresAt: String?
 }
 
-public struct AddMemberParams: Encodable, Sendable {
+public struct AddMemberParams: Encodable {
     public var userId: Int
     public var accessLevel: Int
     public var expiresAt: String?
@@ -544,7 +544,7 @@ public struct AddMemberParams: Encodable, Sendable {
         self.userId = userId; self.accessLevel = accessLevel; self.expiresAt = expiresAt
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(userId, forKey: .userId)
         try c.encode(accessLevel, forKey: .accessLevel)
@@ -556,7 +556,7 @@ public struct AddMemberParams: Encodable, Sendable {
 
 // MARK: - Branch
 
-public struct GLBranch: Codable, Sendable {
+public struct GLBranch: Codable {
     public let name: String
     public let merged: Bool
     public let protected: Bool
@@ -571,7 +571,7 @@ public struct GLBranch: Codable, Sendable {
     }
 }
 
-public struct CreateBranchParams: Encodable, Sendable {
+public struct CreateBranchParams: Encodable {
     public let branch: String
     public let ref: String
     public init(branch: String, ref: String) { self.branch = branch; self.ref = ref }
@@ -579,7 +579,7 @@ public struct CreateBranchParams: Encodable, Sendable {
 
 // MARK: - Pipeline
 
-public struct GLPipeline: Codable, Sendable, Identifiable {
+public struct GLPipeline: Codable {
     public let id: Int
     public let iid: Int?
     public let projectId: Int?
@@ -603,7 +603,7 @@ public struct GLPipeline: Codable, Sendable, Identifiable {
 /// optional, so a partial payload never breaks decoding. `id`, `name`, `stage`
 /// and `status` are the four fields the jobs API always returns and the ones
 /// the list view is built from.
-public struct GLJob: Codable, Sendable, Identifiable {
+public struct GLJob: Codable {
     public let id: Int
     public let name: String
     public let stage: String
@@ -623,7 +623,7 @@ public struct GLJob: Codable, Sendable, Identifiable {
 }
 
 /// The `pipeline` object nested in a job payload (printable fields only).
-public struct GLJobPipelineRef: Codable, Sendable, Identifiable {
+public struct GLJobPipelineRef: Codable {
     public let id: Int
     public let ref: String?
     public let sha: String?
@@ -631,14 +631,14 @@ public struct GLJobPipelineRef: Codable, Sendable, Identifiable {
 }
 
 /// The `artifacts_file` object nested in a job payload.
-public struct GLJobArtifactsFile: Codable, Sendable {
+public struct GLJobArtifactsFile: Codable {
     public let filename: String?
     public let size: Int?
 }
 
 // MARK: - Release
 
-public struct GLRelease: Codable, Sendable {
+public struct GLRelease: Codable {
     public let tagName: String
     public let name: String
     public let description: String?
@@ -648,7 +648,7 @@ public struct GLRelease: Codable, Sendable {
     public let commit: GLCommit?
 }
 
-public struct CreateReleaseParams: Encodable, Sendable {
+public struct CreateReleaseParams: Encodable {
     public var tagName: String
     public var name: String
     public var description: String?
@@ -660,7 +660,7 @@ public struct CreateReleaseParams: Encodable, Sendable {
         self.description = description; self.ref = ref; self.releasedAt = releasedAt
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(tagName, forKey: .tagName)
         try c.encode(name, forKey: .name)
@@ -674,7 +674,7 @@ public struct CreateReleaseParams: Encodable, Sendable {
 
 // MARK: - Tag
 
-public struct GLTag: Codable, Sendable {
+public struct GLTag: Codable {
     public let name: String
     public let message: String?
     public let target: String
@@ -682,12 +682,12 @@ public struct GLTag: Codable, Sendable {
     public let release: GLTagRelease?
 }
 
-public struct GLTagRelease: Codable, Sendable {
+public struct GLTagRelease: Codable {
     public let tagName: String
     public let description: String?
 }
 
-public struct CreateTagParams: Encodable, Sendable {
+public struct CreateTagParams: Encodable {
     public var tagName: String
     public var ref: String
     public var message: String?
@@ -696,7 +696,7 @@ public struct CreateTagParams: Encodable, Sendable {
         self.tagName = tagName; self.ref = ref; self.message = message
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(tagName, forKey: .tagName)
         try c.encode(ref, forKey: .ref)
@@ -708,7 +708,7 @@ public struct CreateTagParams: Encodable, Sendable {
 
 // MARK: - Work Item
 
-public struct GLWorkItem: Codable, Sendable {
+public struct GLWorkItem: Codable {
     public let id: String?       // GraphQL global ID, e.g. gid://gitlab/WorkItem/123
     public let iid: String
     public let title: String
@@ -729,14 +729,14 @@ public struct GLWorkItem: Codable, Sendable {
     public let webUrl: String?
 }
 
-public struct GLWorkItemType: Codable, Sendable {
+public struct GLWorkItemType: Codable {
     public let id: String?
     public let name: String
 }
 
 // Work item params carry GraphQL-ready values (global IDs are pre-resolved by
 // the CLI). The API layer maps these onto GraphQL widget inputs.
-public struct CreateWorkItemParams: Sendable {
+public struct CreateWorkItemParams: Codable {
     public var title: String
     public var workItemTypeId: String?
     public var description: String?
@@ -765,7 +765,7 @@ public struct CreateWorkItemParams: Sendable {
     }
 }
 
-public struct UpdateWorkItemParams: Sendable {
+public struct UpdateWorkItemParams: Codable {
     public var title: String?
     public var description: String?
     public var stateEvent: String?
@@ -797,7 +797,7 @@ public struct UpdateWorkItemParams: Sendable {
     }
 }
 
-public struct GLWorkItemsResponse: Codable, Sendable {
+public struct GLWorkItemsResponse: Codable {
     public let workItems: [GLWorkItem]?
 
     enum CodingKeys: String, CodingKey {
@@ -807,7 +807,7 @@ public struct GLWorkItemsResponse: Codable, Sendable {
 
 // MARK: - Snippet
 
-public struct GLSnippet: Codable, Sendable, Identifiable {
+public struct GLSnippet: Codable {
     public let id: Int
     public let title: String
     public let fileName: String?
@@ -822,12 +822,12 @@ public struct GLSnippet: Codable, Sendable, Identifiable {
     public let files: [GLSnippetFile]?
 }
 
-public struct GLSnippetFile: Codable, Sendable {
+public struct GLSnippetFile: Codable {
     public let path: String?
     public let rawUrl: String?
 }
 
-public struct CreateSnippetParams: Encodable, Sendable {
+public struct CreateSnippetParams: Encodable {
     public var title: String
     public var fileName: String
     public var content: String
@@ -839,7 +839,7 @@ public struct CreateSnippetParams: Encodable, Sendable {
         self.description = description; self.visibility = visibility
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(title, forKey: .title)
         try c.encode(fileName, forKey: .fileName)
@@ -851,7 +851,7 @@ public struct CreateSnippetParams: Encodable, Sendable {
     enum CodingKeys: String, CodingKey { case title, fileName, content, description, visibility }
 }
 
-public struct UpdateSnippetParams: Encodable, Sendable {
+public struct UpdateSnippetParams: Encodable {
     public var title: String?
     public var fileName: String?
     public var content: String?
@@ -863,7 +863,7 @@ public struct UpdateSnippetParams: Encodable, Sendable {
         self.description = description; self.visibility = visibility
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encodeIfPresent(title, forKey: .title)
         try c.encodeIfPresent(fileName, forKey: .fileName)
@@ -877,7 +877,7 @@ public struct UpdateSnippetParams: Encodable, Sendable {
 
 // MARK: - Access levels
 
-public enum GLAccessLevel: Int, Sendable, CustomStringConvertible {
+public enum GLAccessLevel: Int, CustomStringConvertible {
     case noAccess = 0
     case minimal = 5
     case guest = 10

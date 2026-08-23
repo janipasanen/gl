@@ -1,18 +1,18 @@
-// swift-tools-version: 6.0
+// swift-tools-version:5.3
 
 import PackageDescription
 
 let package = Package(
     name: "gl",
     platforms: [
-        .macOS(.v14),
+        .macOS(.v10_15),
     ],
     products: [
         .executable(name: "gl", targets: ["gl"]),
         .library(name: "GitLabCore", targets: ["GitLabCore"]),
     ],
     targets: [
-        .executableTarget(
+        .target(
             name: "gl",
             dependencies: ["GitLabCore"],
             path: "Sources/gl"

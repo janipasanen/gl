@@ -14,9 +14,15 @@ do {
     let environment = ProcessInfo.processInfo.environment
     let client = try GitLabAPIClient(environment: environment)
     let command = try GLCommand.parse(arguments: arguments)
-    let output = try await command.run(client: client)
-    if !output.isEmpty {
-        FileHandle.standardOutput.write(Data((output + "\n").utf8))
+    
+    // Use completion handler style for Swift 5.3 compatibility
+    var output: String?
+    command.run(client: client) { result in
+        output = result
+    }
+    
+    if let out = output, !out.isEmpty {
+        FileHandle.standardOutput.write(Data((out + "\n").utf8))
     }
 } catch {
     FileHandle.standardError.write(Data(("error: \(error.localizedDescription)\n").utf8))

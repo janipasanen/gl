@@ -1,18 +1,12 @@
 import Foundation
 
-// MARK: - Client
+public struct GitLabAPIClient {
 
-public struct GitLabAPIClient: Sendable {
-
-    // MARK: Errors
-
-    public enum ClientError: LocalizedError, Sendable {
+    public enum ClientError: LocalizedError {
         case missingEnvironment(String)
         case invalidURL(String)
         case invalidResponse
         case apiError(Int, String)
-        case tokenCommandFailed(String)
-        case graphQLError(String)
 
         public var errorDescription: String? {
             switch self {
@@ -24,21 +18,13 @@ public struct GitLabAPIClient: Sendable {
                 return "GitLab API returned an invalid response"
             case .apiError(let code, let message):
                 return "GitLab API error \(code): \(message)"
-            case .tokenCommandFailed(let message):
-                return message
-            case .graphQLError(let message):
-                return "GraphQL error: \(message)"
             }
         }
     }
 
-    // MARK: Properties
-
     public let baseURL: URL
     public let token: String
     let session: URLSession
-
-    // MARK: Initializers
 
     public init(baseURL: URL, token: String, session: URLSession = URLSession(configuration: .ephemeral)) {
         self.baseURL = baseURL
@@ -60,11 +46,6 @@ public struct GitLabAPIClient: Sendable {
         self.init(baseURL: url, token: tok)
     }
 
-    // MARK: Token resolution
-
-    /// Resolve the API token. An explicit non-empty `GITLAB_TOKEN` wins;
-    /// otherwise `GITLAB_TOKEN_COMMAND` is executed and its stdout is used
-    /// (so the token need never live in an env var or plaintext file).
     static func resolveToken(environment: [String: String]) throws -> String {
         if let tok = environment["GITLAB_TOKEN"], !tok.isEmpty {
             return tok
@@ -76,7 +57,6 @@ public struct GitLabAPIClient: Sendable {
         throw ClientError.missingEnvironment("GITLAB_TOKEN or GITLAB_TOKEN_COMMAND")
     }
 
-    /// Run `command` via `/bin/sh -c` and return its trimmed stdout as the token.
     static func runTokenCommand(_ command: String) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -89,8 +69,7 @@ public struct GitLabAPIClient: Sendable {
         do {
             try process.run()
         } catch {
-            throw ClientError.tokenCommandFailed(
-                "GITLAB_TOKEN_COMMAND could not be executed: \(error.localizedDescription)")
+            throw ClientError.missingEnvironment("GITLAB_TOKEN_COMMAND execution failed: \(error.localizedDescription)")
         }
 
         let outData = stdout.fileHandleForReading.readDataToEndOfFile()
@@ -98,32 +77,28 @@ public struct GitLabAPIClient: Sendable {
         process.waitUntilExit()
 
         guard process.terminationStatus == 0 else {
-            let detail = String(data: errData, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let suffix = detail.isEmpty ? "" : ": \(detail)"
-            throw ClientError.tokenCommandFailed(
-                "GITLAB_TOKEN_COMMAND exited with status \(process.terminationStatus)\(suffix)")
+            let detail = String(data: errData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            throw ClientError.missingEnvironment("GITLAB_TOKEN_COMMAND failed: \(detail)")
         }
 
-        let token = (String(data: outData, encoding: .utf8) ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let token = (String(data: outData, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty else {
-            throw ClientError.tokenCommandFailed("GITLAB_TOKEN_COMMAND produced no output")
+            throw ClientError.missingEnvironment("GITLAB_TOKEN_COMMAND produced no output")
         }
         return token
     }
-
-    // MARK: Raw request
 
     public func request(
         path: String,
         method: String = "GET",
         queryItems: [URLQueryItem] = [],
-        body: Data? = nil
-    ) async throws -> (Data, HTTPURLResponse) {
+        body: Data? = nil,
+        completion: @escaping (Result<(Data, HTTPURLResponse), Error>) -> Void
+    ) {
         let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
         guard let url = apiURL(apiPath: "/api/v4/\(trimmed)", queryItems: queryItems) else {
-            throw ClientError.invalidURL(path)
+            completion(.failure(ClientError.invalidURL(path)))
+            return
         }
 
         var req = URLRequest(url: url)
@@ -135,17 +110,21 @@ public struct GitLabAPIClient: Sendable {
         }
         req.httpBody = body
 
-        let (data, response) = try await session.data(for: req)
-        guard let http = response as? HTTPURLResponse else {
-            throw ClientError.invalidResponse
-        }
-        return (data, http)
+        session.dataTask(with: req) { data, response, error in
+            if let error = error {
+                completion(.failure(error))
+                return
+            }
+
+            guard let http = response as? HTTPURLResponse else {
+                completion(.failure(ClientError.invalidResponse))
+                return
+            }
+
+            completion(.success((data!, http)))
+        }.resume()
     }
 
-    /// Build an absolute API URL from `baseURL`, normalising a trailing
-    /// `/api/v4` and trailing slashes away so both `https://host` and
-    /// `https://host/api/v4` resolve correctly. `apiPath` is inserted verbatim
-    /// via `percentEncodedPath` (callers pre-encode path segments).
     private func apiURL(apiPath: String, queryItems: [URLQueryItem] = []) -> URL? {
         var components = URLComponents()
         components.scheme = baseURL.scheme
@@ -161,95 +140,84 @@ public struct GitLabAPIClient: Sendable {
         return components.url
     }
 
-    // MARK: GraphQL
-
-    /// Execute a GraphQL query/mutation against `<base>/api/graphql` and return
-    /// the pretty-printed `data` object. `variablesJSON`, if provided, must be a
-    /// JSON object string. Top-level GraphQL `errors` are surfaced as a thrown
-    /// `ClientError.graphQLError`. (GraphQL lives at `/api/graphql`, not `/api/v4`.)
-    public func graphQL(query: String, variablesJSON: String? = nil) async throws -> Data {
-        guard let url = apiURL(apiPath: "/api/graphql") else {
-            throw ClientError.invalidURL("graphql")
-        }
-
-        var bodyObject: [String: Any] = ["query": query]
-        if let vj = variablesJSON, !vj.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            guard let variables = try? JSONSerialization.jsonObject(with: Data(vj.utf8)),
-                  variables is [String: Any] else {
-                throw ClientError.graphQLError("--variables must be a JSON object")
+    func get<T: Decodable>(path: String, queryItems: [URLQueryItem] = [], completion: @escaping (Result<T, Error>) -> Void) {
+        self.request(path: path, method: "GET", queryItems: queryItems) { result in
+            switch result {
+            case .success((let data, let response)):
+                do {
+                    try self.checkResponse(response, data: data)
+                    let decoder = JSONDecoder()
+                    decoder.keyDecodingStrategy = .convertFromSnakeCase
+                    let decoded = try decoder.decode(T.self, from: data)
+                    completion(.success(decoded))
+                } catch {
+                    completion(.failure(error))
+                }
+            case .failure(let error):
+                completion(.failure(error))
             }
-            bodyObject["variables"] = variables
         }
-        let bodyData = try JSONSerialization.data(withJSONObject: bodyObject)
+    }
 
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        // GitLab's GraphQL docs use `Authorization: Bearer`; PRIVATE-TOKEN also
-        // works for PATs. Send both for maximum compatibility across versions.
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.setValue(token, forHTTPHeaderField: "PRIVATE-TOKEN")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.httpBody = bodyData
-
-        let (data, response) = try await session.data(for: req)
-        guard let http = response as? HTTPURLResponse else {
-            throw ClientError.invalidResponse
+    func post<T: Decodable, B: Encodable>(path: String, body: B, completion: @escaping (Result<T, Error>) -> Void) {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let bodyData = try! encoder.encode(body)
+        self.request(path: path, method: "POST", body: bodyData) { result in
+            switch result {
+            case .success((let data, let response)):
+                do {
+                    try self.checkResponse(response, data: data)
+                    let decoder = JSONDecoder()
+                    decoder.keyDecodingStrategy = .convertFromSnakeCase
+                    let decoded = try decoder.decode(T.self, from: data)
+                    completion(.success(decoded))
+                } catch {
+                    completion(.failure(error))
+                }
+            case .failure(let error):
+                completion(.failure(error))
+            }
         }
-        try checkResponse(http, data: data)
+    }
 
-        guard let envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw ClientError.invalidResponse
+    func put<T: Decodable, B: Encodable>(path: String, body: B, completion: @escaping (Result<T, Error>) -> Void) {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let bodyData = try! encoder.encode(body)
+        self.request(path: path, method: "PUT", body: bodyData) { result in
+            switch result {
+            case .success((let data, let response)):
+                do {
+                    try self.checkResponse(response, data: data)
+                    let decoder = JSONDecoder()
+                    decoder.keyDecodingStrategy = .convertFromSnakeCase
+                    let decoded = try decoder.decode(T.self, from: data)
+                    completion(.success(decoded))
+                } catch {
+                    completion(.failure(error))
+                }
+            case .failure(let error):
+                completion(.failure(error))
+            }
         }
-        if let errors = envelope["errors"] as? [[String: Any]], !errors.isEmpty {
-            let messages = errors.compactMap { $0["message"] as? String }.joined(separator: "; ")
-            throw ClientError.graphQLError(messages.isEmpty ? "GraphQL request returned errors" : messages)
+    }
+
+    func delete(path: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        self.request(path: path, method: "DELETE") { result in
+            switch result {
+            case .success((let data, let response)):
+                do {
+                    try self.checkResponse(response, data: data)
+                    completion(.success(()))
+                } catch {
+                    completion(.failure(error))
+                }
+            case .failure(let error):
+                completion(.failure(error))
+            }
         }
-        let dataField = envelope["data"] ?? NSNull()
-        return try JSONSerialization.data(withJSONObject: dataField, options: [.prettyPrinted, .sortedKeys])
     }
-
-    /// Convenience overload that serialises `variables` to JSON safely (avoids
-    /// string-interpolating untrusted values like project paths into the body).
-    func graphQL(query: String, variables: [String: Any]) async throws -> Data {
-        let vjson = String(data: try JSONSerialization.data(withJSONObject: variables), encoding: .utf8)
-        return try await graphQL(query: query, variablesJSON: vjson)
-    }
-
-    /// Decode a GraphQL `data` payload into a typed value using the shared decoder.
-    func graphQLDecode<T: Decodable>(query: String, variables: [String: Any]) async throws -> T {
-        let data = try await graphQL(query: query, variables: variables)
-        return try Self.decode(data)
-    }
-
-    // MARK: Typed helpers
-
-    func get<T: Decodable>(path: String, queryItems: [URLQueryItem] = []) async throws -> T {
-        let (data, response) = try await request(path: path, queryItems: queryItems)
-        try checkResponse(response, data: data)
-        return try Self.decode(data)
-    }
-
-    func post<T: Decodable, B: Encodable>(path: String, body: B) async throws -> T {
-        let bodyData = try Self.encode(body)
-        let (data, response) = try await request(path: path, method: "POST", body: bodyData)
-        try checkResponse(response, data: data)
-        return try Self.decode(data)
-    }
-
-    func put<T: Decodable, B: Encodable>(path: String, body: B) async throws -> T {
-        let bodyData = try Self.encode(body)
-        let (data, response) = try await request(path: path, method: "PUT", body: bodyData)
-        try checkResponse(response, data: data)
-        return try Self.decode(data)
-    }
-
-    func delete(path: String) async throws {
-        let (data, response) = try await request(path: path, method: "DELETE")
-        try checkResponse(response, data: data)
-    }
-
-    // MARK: Internals
 
     func checkResponse(_ response: HTTPURLResponse, data: Data) throws {
         guard (200..<300).contains(response.statusCode) else {
@@ -258,27 +226,12 @@ public struct GitLabAPIClient: Sendable {
         }
     }
 
-    static func decode<T: Decodable>(_ data: Data) throws -> T {
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        decoder.dateDecodingStrategy = .custom { dec in
-            let c = try dec.singleValueContainer()
-            let s = try c.decode(String.self)
-            for fmt in [ISO8601DateFormatter.withFractional, ISO8601DateFormatter.plain] {
-                if let d = fmt.date(from: s) { return d }
-            }
-            throw DecodingError.dataCorruptedError(in: c, debugDescription: "Unsupported date: \(s)")
-        }
-        return try decoder.decode(T.self, from: data)
-    }
-
     static func encode<T: Encodable>(_ value: T) throws -> Data {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         return try encoder.encode(value)
     }
 
-    // URL-encode a project/group path for use in REST paths
     static func encodePath(_ path: String) -> String {
         var allowed = CharacterSet.urlPathAllowed
         allowed.remove("/")
@@ -286,32 +239,10 @@ public struct GitLabAPIClient: Sendable {
     }
 }
 
-// MARK: - Date formatters
+// MARK: - User Methods
 
-extension ISO8601DateFormatter {
-    nonisolated(unsafe) static let withFractional: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-
-    nonisolated(unsafe) static let plain: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f
-    }()
-}
-
-// MARK: - Pretty JSON helper
-
-extension Encodable {
-    /// Re-encode as pretty-printed JSON string (snake_case keys, sorted).
-    public func prettyJSON() -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-        guard let data = try? encoder.encode(self),
-              let str = String(data: data, encoding: .utf8) else { return "{}" }
-        return str
+extension GitLabAPIClient {
+    public func currentUser(completion: @escaping (Result<GLUser, Error>) -> Void) {
+        self.get(path: "user", completion: completion)
     }
 }
