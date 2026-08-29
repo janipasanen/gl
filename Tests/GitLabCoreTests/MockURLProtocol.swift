@@ -1,6 +1,10 @@
 import Foundation
 import GitLabCore
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 // MARK: - Mock URL protocol
 
 /// Intercepts all URLSession requests and delegates to `requestHandler`.

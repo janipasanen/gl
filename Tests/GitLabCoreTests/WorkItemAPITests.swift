@@ -1,6 +1,10 @@
 import XCTest
 @testable import GitLabCore
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 /// Work items go through GitLab GraphQL (`/api/graphql`). These tests stub the
 /// GraphQL response envelopes and assert on the queries/mutations sent.
 final class WorkItemAPITests: XCTestCase {

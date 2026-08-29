@@ -1,6 +1,10 @@
 import XCTest
 @testable import GitLabCore
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 final class PipelineAPITests: XCTestCase {
 
     func testListPipelines() async throws {
