@@ -90,6 +90,16 @@ public struct GitLabAPIClient: Sendable {
         process.standardOutput = stdout
         process.standardError = stderr
 
+        // Signal termination through a semaphore rather than waitUntilExit().
+        // Under swift-corelibs-foundation, waitUntilExit() spins the *calling*
+        // thread's RunLoop; when gl runs this from its async main that thread
+        // has no RunLoop servicing the child-termination source, so it would
+        // block forever on Linux. terminationHandler is delivered on a Dispatch
+        // queue and needs no RunLoop, and behaves the same on Darwin.
+        // Must be installed before run().
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
+
         do {
             try process.run()
         } catch {
@@ -97,9 +107,20 @@ public struct GitLabAPIClient: Sendable {
                 "GITLAB_TOKEN_COMMAND could not be executed: \(error.localizedDescription)")
         }
 
-        let outData = stdout.fileHandleForReading.readDataToEndOfFile()
-        let errData = stderr.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+        // Drain both pipes concurrently, so a command that writes heavily to
+        // stderr cannot fill that pipe while we are blocked reading stdout
+        // (and vice versa).
+        let outBox = LockedData()
+        let errBox = LockedData()
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "gl.token-command", attributes: .concurrent)
+        queue.async(group: group) { outBox.value = stdout.fileHandleForReading.readDataToEndOfFile() }
+        queue.async(group: group) { errBox.value = stderr.fileHandleForReading.readDataToEndOfFile() }
+        group.wait()
+        exited.wait()
+
+        let outData = outBox.value
+        let errData = errBox.value
 
         guard process.terminationStatus == 0 else {
             let detail = String(data: errData, encoding: .utf8)?
@@ -287,6 +308,20 @@ public struct GitLabAPIClient: Sendable {
         var allowed = CharacterSet.urlPathAllowed
         allowed.remove("/")
         return path.addingPercentEncoding(withAllowedCharacters: allowed) ?? path
+    }
+}
+
+// MARK: - Concurrency helpers
+
+/// A lock-guarded `Data` box, used to collect pipe output from background
+/// queues without tripping Swift 6 strict-concurrency checks.
+final class LockedData: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage = Data()
+
+    var value: Data {
+        get { lock.lock(); defer { lock.unlock() }; return storage }
+        set { lock.lock(); defer { lock.unlock() }; storage = newValue }
     }
 }
 
